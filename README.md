@@ -147,8 +147,8 @@ Menú Principal
 │  Fecha:   05/03/2025 14:30:22                                │
 │  Tipo:    Ingreso                     Estado: Vigente        │
 │                                                              │
-│  Emisor:  LAVE670516XXX                                      │
-│           LUIS ALBERTO VALENZUELA ESPINOZA                   │
+│  Emisor:  XXXX000000XXX                                      │
+│           JUAN PÉREZ GARCÍA                   │
 │           Régimen: 612 - Personas Físicas con Act. Emp.      │
 │                                                              │
 │  Receptor: EMP850101AAA                                      │
@@ -184,7 +184,7 @@ Mes inicio: 1
 Mes fin: 3
 
 Autenticando con FIEL...
-  Certificado: LAVE670516HDFLLD01
+  Certificado: XXXX000000XXXXXXXXX
   Vigencia: 2024-11-08 - 2028-11-08
 
 Descargando emitidas: 2025-01-01 → 2025-03-31
