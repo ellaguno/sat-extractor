@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Config con credenciales
+config.toml
+
+# Datos personales del SAT
+SAT_ELLV/
+
+# Base de datos
+*.db
+
+# Reportes generados
+reportes_sat/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code
+.claude/
+
+# Plan de desarrollo
+Plan.md

@@ -1,0 +1,19 @@
+[project]
+name = "satextractor"
+version = "0.1.0"
+description = "Extractor de facturas CFDI del SAT"
+requires-python = ">=3.12"
+dependencies = [
+    "cfdiclient>=1.4",
+    "lxml>=5.0",
+    "openpyxl>=3.1",
+    "rich>=13.0",
+    "cryptography>=41.0",
+]
+
+[project.scripts]
+satextractor = "satextractor.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"

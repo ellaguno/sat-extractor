@@ -1,0 +1,13 @@
+[fiel]
+cer_path = "/ruta/a/tu/certificado.cer"
+key_path = "/ruta/a/tu/llave_privada.key"
+# password = "tu_contraseña_aqui"  # Opcional: si no se pone, se pide al ejecutar
+
+[sat]
+rfc = "TU_RFC_AQUI"
+
+[database]
+path = "~/satextractor.db"
+
+[export]
+output_dir = "~/reportes_sat"
