@@ -198,7 +198,7 @@ class App:
         console.print(table)
         console.print(
             "[dim]* IVA x Pagar = IVA cobrado - IVA acreditable - IVA retenido[/dim]\n"
-            "[dim]* ISR Prov. = estimado Art.96 LISR (no incluye depreciaciones ni pérdidas anteriores)[/dim]"
+            "[dim]* ISR Prov. = Art.96 LISR sobre (ingresos - deducciones) - ISR retenido - pagos prev. (no incluye depreciaciones ni pérdidas ant.)[/dim]"
         )
 
         # Prompt para ver detalle de un mes

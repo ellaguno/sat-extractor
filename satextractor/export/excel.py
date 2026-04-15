@@ -372,7 +372,7 @@ class ExcelExporter:
             "* IVA x Pagar = IVA cobrado - IVA acreditable - IVA retenido"
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 2, column=1, value=(
-            "* ISR Prov. = estimado Art.96 LISR, no incluye depreciaciones, PTU ni pérdidas anteriores"
+            "* ISR Prov. = Art.96 LISR sobre (ingresos - deducciones) - ISR retenido - pagos prov. anteriores (no incluye depreciaciones, PTU ni pérdidas ant.)"
         )).font = Font(italic=True, size=9, color="888888")
 
         ws.freeze_panes = "A2"
