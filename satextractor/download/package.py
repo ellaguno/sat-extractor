@@ -43,11 +43,15 @@ def import_xml_directory(
     directory: Path,
     db: Repository,
     tipo: str = "recibida",
-) -> int:
+    rfc_propio: str | None = None,
+) -> dict[str, int]:
     """Importa todos los XMLs de un directorio a la BD.
 
+    Si rfc_propio se proporciona, auto-detecta si cada CFDI es
+    emitida o recibida comparando el RFC del emisor.
+
     Returns:
-        Cantidad de CFDIs importados.
+        Dict con conteos: {"emitida": n, "recibida": n, "errors": n}
     """
     if not directory.is_dir():
         raise NotADirectoryError(f"No es un directorio: {directory}")
@@ -62,20 +66,28 @@ def import_xml_directory(
             seen.add(key)
             unique_files.append(f)
 
-    count = 0
-    errors = 0
+    counts = {"emitida": 0, "recibida": 0, "errors": 0}
 
     for xml_path in unique_files:
         try:
+            # Parsear primero sin tipo para detectar
             comprobante = parse_cfdi(xml_path.read_bytes(), tipo)
+
+            # Auto-detectar tipo si tenemos el RFC
+            if rfc_propio:
+                if comprobante.rfc_emisor.upper() == rfc_propio.upper():
+                    comprobante.tipo = "emitida"
+                else:
+                    comprobante.tipo = "recibida"
+
             if comprobante.uuid:
                 db.upsert_comprobante(comprobante)
-                count += 1
+                counts[comprobante.tipo] += 1
         except Exception as e:
             console.print(f"[yellow]  Advertencia: {xml_path.name}: {e}")
-            errors += 1
+            counts["errors"] += 1
 
-    if errors:
-        console.print(f"[yellow]  {errors} archivo(s) con errores")
+    if counts["errors"]:
+        console.print(f"[yellow]  {counts['errors']} archivo(s) con errores")
 
-    return count
+    return counts

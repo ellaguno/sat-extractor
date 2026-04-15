@@ -624,13 +624,26 @@ class App:
             console.print(f"[red]No existe el directorio: {directory}[/red]")
             return
 
-        console.print("  [1] Recibidas")
-        console.print("  [2] Emitidas")
-        tipo_opt = IntPrompt.ask("Tipo de facturas", default=1)
-        tipo = "recibida" if tipo_opt == 1 else "emitida"
+        # Auto-detectar tipo si tenemos RFC en config
+        rfc = None
+        if self.config and hasattr(self.config, "sat") and self.config.sat:
+            rfc = self.config.sat.rfc
 
-        count = import_xml_directory(directory, self.db, tipo)
-        console.print(f"[green]{count} CFDI(s) importados como {tipo}s[/green]")
+        if rfc:
+            console.print(f"  Auto-detectando tipo (emitida/recibida) por RFC: {rfc}")
+            counts = import_xml_directory(directory, self.db, rfc_propio=rfc)
+        else:
+            console.print("  [1] Recibidas")
+            console.print("  [2] Emitidas")
+            tipo_opt = IntPrompt.ask("Tipo de facturas", default=1)
+            tipo = "recibida" if tipo_opt == 1 else "emitida"
+            counts = import_xml_directory(directory, self.db, tipo)
+
+        total = counts["emitida"] + counts["recibida"]
+        console.print(
+            f"[green]{total} CFDI(s) importados: "
+            f"{counts['emitida']} emitida(s), {counts['recibida']} recibida(s)[/green]"
+        )
 
     # ── Export ─────────────────────────────────────────────────────────
 
