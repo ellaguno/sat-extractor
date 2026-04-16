@@ -1,6 +1,6 @@
 """Cálculo de impuestos provisionales para Persona Física con Actividad Empresarial."""
 
-from .db.repository import Repository
+from ..db.repository import Repository
 
 # Tabla mensual Art. 96 LISR (vigente 2024-2025)
 # (límite_inferior, límite_superior, cuota_fija, porcentaje_excedente)

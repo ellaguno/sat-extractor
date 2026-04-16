@@ -11,3 +11,15 @@ path = "~/satextractor.db"
 
 [export]
 output_dir = "~/reportes_sat"
+
+# ── Análisis Fiscal Inteligente (opcional) ──
+
+[contribuyente]
+regimen = "612"  # 612=PFAE, 626=RESICO
+# actividad = "Desarrollo de software"  # Descripción de tu actividad económica
+
+[ia]
+# provider = "anthropic"
+# api_key = ""  # O usa variable de entorno ANTHROPIC_API_KEY
+# model = "claude-sonnet-4-6"
+# cache_dias = 90

@@ -18,6 +18,9 @@ source .venv/bin/activate
 
 # Instalar dependencias (solo la primera vez)
 pip install cfdiclient lxml openpyxl rich cryptography
+
+# Opcional: para analisis fiscal con IA
+pip install anthropic
 ```
 
 ## Configuracion
@@ -44,6 +47,16 @@ path = "~/satextractor.db"            # Donde se guarda la base de datos
 
 [export]
 output_dir = "~/reportes_sat"          # Donde se guardan los Excel
+
+# Opcional: analisis fiscal inteligente
+[contribuyente]
+regimen = "612"                        # 612=PFAE, 626=RESICO
+# actividad = "Desarrollo de software" # Tu actividad economica
+
+[ia]
+# api_key = ""                         # O usa variable ANTHROPIC_API_KEY
+# model = "claude-sonnet-4-6"          # Modelo de IA a usar
+# cache_dias = 90                      # Dias que se cachean clasificaciones
 ```
 
 ### Sobre la FIEL
@@ -82,6 +95,7 @@ Menu Principal
   [2] Importar XMLs desde directorio
   [3] Visualizar datos
   [4] Exportar a Excel
+  [5] Analisis Fiscal Inteligente
   [0] Salir
 ```
 
@@ -246,6 +260,99 @@ Genera archivos `.xlsx` en el directorio configurado en `output_dir`.
 Antes de generar, el programa muestra cuantos registros se incluiran.
 Si dice "0 recibidas, 0 emitidas" verifica que estas pidiendo el
 mes/año correcto.
+
+### [5] Analisis Fiscal Inteligente
+
+Motor de clasificacion automatica de deducciones basado en las reglas
+de la LISR vigente. Clasifica cada concepto de tus facturas recibidas
+como deducible o no segun tu regimen fiscal.
+
+```
+Analisis Fiscal Inteligente
+Regimen: 612
+
+  [1] Clasificar deducciones del periodo
+  [2] Resumen por categoria de gasto
+  [3] Sugerencias de optimizacion
+  [4] Consultar deducibilidad de un CFDI
+  [0] Volver
+```
+
+#### [5.1] Clasificar deducciones del periodo
+
+Analiza todas las facturas recibidas de un mes o año completo.
+Muestra cada concepto con su categoria, porcentaje deducible,
+monto deducible y alertas.
+
+Indicadores en la columna final:
+- **V** = Deducible (alta confianza)
+- **!** = Deducible con alertas (revisar requisitos)
+- **?** = Baja confianza de clasificacion (la clave SAT no se reconocio)
+- **X** = No deducible
+
+#### [5.2] Resumen por categoria de gasto
+
+Agrupa todos los gastos del año por categoria fiscal:
+
+- Gastos de operacion, servicios profesionales, telecomunicaciones, etc.
+- Software y licencias, papeleria, mantenimiento
+- Restaurantes (91.5% deducible con pago con tarjeta)
+- Combustibles (100% con pago electronico)
+- Inversiones (equipo de computo, vehiculos, mobiliario) con depreciacion
+- Deducciones personales (medicos, colegiaturas, etc.)
+
+Muestra totales deducibles y no deducibles, y alertas por categoria.
+
+#### [5.3] Sugerencias de optimizacion
+
+Genera recomendaciones basadas en tus patrones de gasto:
+
+- **Pagos en efectivo > $2,000**: se pierden como deduccion
+  (Art. 27 Fracc. III LISR)
+- **Restaurantes en efectivo**: no son deducibles; con tarjeta
+  serian al 91.5% (Art. 28 Fracc. XX LISR)
+- **Deducciones personales faltantes**: medicos, colegiaturas,
+  seguros de gastos medicos, aportaciones a retiro
+- **Proporcion deducciones/ingresos**: alerta si es muy baja
+
+Si configuras la API de IA (`[ia]` en config.toml), las sugerencias
+se enriquecen con analisis personalizado. Sin API, el motor funciona
+al 100% con reglas locales.
+
+#### [5.4] Consultar deducibilidad de un CFDI
+
+Ingresa el UUID de una factura recibida y muestra el analisis
+completo de cada concepto: categoria, porcentaje, fundamento legal
+de la LISR, requisitos y alertas.
+
+#### Reglas fiscales implementadas
+
+El motor incluye reglas para el regimen 612 (PFAE) basadas en:
+
+| Regla | Fundamento | Detalle |
+|-------|-----------|---------|
+| Gastos de operacion | Art. 103 Fracc. III LISR | 100% si estrictamente indispensable |
+| Restaurantes | Art. 28 Fracc. XX LISR | 91.5% solo con pago con tarjeta |
+| Combustibles | Art. 27 Fracc. III LISR | 100% solo con pago electronico |
+| Pagos en efectivo > $2,000 | Art. 27 Fracc. III LISR | NO deducibles |
+| Vehiculos (inversion) | Art. 36 Fracc. II LISR | Limite $175,000 (combustion), $250,000 (electricos) |
+| Equipo de computo | Art. 34 Fracc. VII LISR | Depreciacion 30% anual |
+| Mobiliario oficina | Art. 34 Fracc. III LISR | Depreciacion 10% anual |
+| Automoviles | Art. 34 Fracc. VI LISR | Depreciacion 25% anual |
+| Honorarios medicos | Art. 151 Fracc. I LISR | 100% con pago electronico |
+| Colegiaturas | Decreto DOF 26/12/2013 | Limites por nivel educativo |
+| Gastos funerarios | Art. 151 Fracc. II LISR | Limite 1 UMA anual |
+| Donativos | Art. 151 Fracc. III LISR | Limite 7% utilidad fiscal |
+| CFDIs cancelados | Art. 27 Fracc. XVIII LISR | NO deducibles |
+
+Las reglas se encuentran en `satextractor/fiscal/reglas_deducciones.toml`
+y el catalogo de claves SAT en `satextractor/fiscal/catalogo_sat.toml`.
+Puedes editarlos para ajustar reglas o agregar claves.
+
+**Nota importante**: Las clasificaciones y sugerencias son educativas
+y no sustituyen asesoria fiscal profesional.
+
+---
 
 ## Datos extraidos de cada CFDI
 

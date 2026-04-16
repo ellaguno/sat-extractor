@@ -52,3 +52,32 @@ TIPO_COMPROBANTE = {
     "P": "Pago",
     "N": "Nómina",
 }
+
+
+@dataclass
+class ResultadoClasificacion:
+    """Resultado de clasificar un concepto como deducible o no."""
+
+    concepto_descripcion: str
+    clave_prod_serv: str
+    categoria: str  # "alimentos_restaurante", "combustible", etc.
+    es_deducible: bool
+    porcentaje_deducible: float  # 0-100
+    monto_original: Decimal
+    monto_deducible: Decimal
+    fundamento_legal: str  # "Art. 103 Fracc. I LISR"
+    requisitos: list[str] = field(default_factory=list)
+    alertas: list[str] = field(default_factory=list)
+    fuente: str = "regla_local"  # "regla_local" | "ia" | "cache"
+    confianza: float = 1.0  # 0-1
+
+
+@dataclass
+class Sugerencia:
+    """Sugerencia de optimización fiscal."""
+
+    titulo: str
+    descripcion: str
+    ahorro_estimado: Decimal | None = None
+    categoria: str = "general"  # "general", "deducciones", "forma_pago", "personal"
+    prioridad: int = 1  # 1=alta, 2=media, 3=baja

@@ -15,6 +15,7 @@ from ..db.repository import Repository
 from ..download.package import import_xml_directory
 from ..export.excel import ExcelExporter, MESES
 from ..fiscal import calcular_impuestos_mensuales
+from ..fiscal.clasificador import ClasificadorDeducciones
 from ..models import TIPO_COMPROBANTE
 
 console = Console()
@@ -49,6 +50,7 @@ class App:
             console.print("  [2] Importar XMLs desde directorio")
             console.print("  [3] Visualizar datos")
             console.print("  [4] Exportar a Excel")
+            console.print("  [5] Análisis Fiscal Inteligente")
             console.print("  [0] Salir")
             console.print()
 
@@ -68,6 +70,8 @@ class App:
                 self._menu_viewer()
             elif option == 4:
                 self._menu_export()
+            elif option == 5:
+                self._menu_fiscal()
             else:
                 console.print("[red]Opción no válida[/red]")
 
@@ -678,3 +682,403 @@ class App:
             console.print(f"  Registros: {n_rec} recibidas, {n_emi} emitidas")
             path = self.exporter.annual_report(year, output_dir)
             console.print(f"[green]Reporte guardado en: {path}[/green]")
+
+    # ── Análisis Fiscal Inteligente ────────────────────────────────────
+
+    def _get_regimen(self) -> str:
+        """Obtiene el régimen fiscal de la configuración o pregunta."""
+        if self.config and self.config.contribuyente:
+            return self.config.contribuyente.regimen
+        return "612"
+
+    def _get_clasificador(self) -> ClasificadorDeducciones:
+        regimen = self._get_regimen()
+        return ClasificadorDeducciones(regimen, self.db)
+
+    def _menu_fiscal(self):
+        while True:
+            console.print()
+            console.print("[bold magenta]Análisis Fiscal Inteligente[/bold magenta]")
+            regimen = self._get_regimen()
+            console.print(f"[dim]Régimen: {regimen}[/dim]")
+            console.print()
+            console.print("  [1] Clasificar deducciones del periodo")
+            console.print("  [2] Resumen por categoría de gasto")
+            console.print("  [3] Sugerencias de optimización")
+            console.print("  [4] Consultar deducibilidad de un CFDI")
+            console.print("  [0] Volver")
+            console.print()
+
+            try:
+                opt = IntPrompt.ask("Opción", default=0)
+            except (KeyboardInterrupt, EOFError):
+                break
+
+            if opt == 0:
+                break
+            elif opt == 1:
+                self._fiscal_clasificar_periodo()
+            elif opt == 2:
+                self._fiscal_resumen_categorias()
+            elif opt == 3:
+                self._fiscal_sugerencias()
+            elif opt == 4:
+                self._fiscal_consultar_cfdi()
+
+    def _fiscal_get_recibidas(self, year: int, month: int | None = None):
+        """Obtiene facturas recibidas del periodo."""
+        if month:
+            fecha_inicio = date(year, month, 1)
+            fecha_fin = date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1)
+        else:
+            fecha_inicio = date(year, 1, 1)
+            fecha_fin = date(year + 1, 1, 1)
+
+        return self.db.search(
+            tipo="recibida",
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            limit=5000,
+        )
+
+    def _fiscal_clasificar_periodo(self):
+        console.print("\n[bold]Clasificar Deducciones[/bold]")
+        year = IntPrompt.ask("Año", default=CURRENT_YEAR)
+        console.print("  Mes (0 = todo el año)")
+        month_input = IntPrompt.ask("Mes", default=0)
+        month = month_input if 1 <= month_input <= 12 else None
+
+        recibidas = self._fiscal_get_recibidas(year, month)
+        if not recibidas:
+            console.print("[yellow]No hay facturas recibidas en este periodo.[/yellow]")
+            return
+
+        clasificador = self._get_clasificador()
+        periodo_label = f"{MESES[month]} {year}" if month else str(year)
+
+        console.print(f"\n[dim]Clasificando {len(recibidas)} facturas recibidas...[/dim]")
+
+        # Tabla de clasificación por concepto
+        table = Table(
+            title=f"Deducciones - {periodo_label}",
+            title_style="bold magenta",
+            border_style="magenta",
+            show_lines=False,
+            padding=(0, 1),
+        )
+        table.add_column("#", width=3, style="dim")
+        table.add_column("Fecha", width=10)
+        table.add_column("Concepto", width=30, no_wrap=True)
+        table.add_column("Categoría", width=20, no_wrap=True)
+        table.add_column("Monto", justify="right", width=12)
+        table.add_column("Ded.", justify="right", width=12)
+        table.add_column("%", justify="right", width=6)
+        table.add_column("", width=3)  # Alertas indicator
+
+        total_original = 0.0
+        total_deducible = 0.0
+        i = 0
+
+        for comp in recibidas:
+            if not comp.conceptos:
+                continue
+            clasificaciones = clasificador.clasificar_comprobante(comp)
+            for clas in clasificaciones:
+                i += 1
+                monto_orig = float(clas.monto_original)
+                monto_ded = float(clas.monto_deducible)
+                total_original += monto_orig
+                total_deducible += monto_ded
+
+                # Estilo según deducibilidad
+                if not clas.es_deducible:
+                    ded_style = "red"
+                    indicator = "[red]X[/red]"
+                elif clas.confianza < 0.5:
+                    ded_style = "yellow"
+                    indicator = "[yellow]?[/yellow]"
+                elif clas.alertas:
+                    ded_style = "yellow"
+                    indicator = "[yellow]![/yellow]"
+                else:
+                    ded_style = "green"
+                    indicator = "[green]V[/green]"
+
+                table.add_row(
+                    str(i),
+                    comp.fecha.strftime("%d/%m"),
+                    clas.concepto_descripcion[:30],
+                    clas.categoria[:20],
+                    f"${monto_orig:,.2f}",
+                    f"[{ded_style}]${monto_ded:,.2f}[/{ded_style}]",
+                    f"{clas.porcentaje_deducible:.0f}%",
+                    indicator,
+                )
+
+                if i >= 200:  # Limitar a 200 filas
+                    break
+            if i >= 200:
+                break
+
+        # Totales
+        pct = (total_deducible / total_original * 100) if total_original > 0 else 0
+        no_ded = total_original - total_deducible
+        table.add_row(
+            "", "", "", f"[bold]{i} conceptos[/bold]",
+            f"[bold]${total_original:,.2f}[/bold]",
+            f"[bold green]${total_deducible:,.2f}[/bold green]",
+            f"[bold]{pct:.0f}%[/bold]",
+            "",
+            end_section=True,
+        )
+        console.print(table)
+
+        console.print(
+            f"\n  [green]Deducible:[/green]     ${total_deducible:,.2f}"
+            f"\n  [red]No deducible:[/red]  ${no_ded:,.2f}"
+            f"\n  [dim]V=deducible  !=alertas  ?=baja confianza  X=no deducible[/dim]"
+        )
+
+    def _fiscal_resumen_categorias(self):
+        console.print("\n[bold]Resumen por Categoría de Gasto[/bold]")
+        year = IntPrompt.ask("Año", default=CURRENT_YEAR)
+
+        recibidas = self._fiscal_get_recibidas(year)
+        if not recibidas:
+            console.print("[yellow]No hay facturas recibidas en este año.[/yellow]")
+            return
+
+        clasificador = self._get_clasificador()
+
+        console.print(f"[dim]Analizando {len(recibidas)} facturas...[/dim]")
+        resumen = clasificador.resumen_periodo(recibidas)
+
+        # Tabla resumen por categoría
+        table = Table(
+            title=f"Deducciones por Categoría - {year}",
+            title_style="bold magenta",
+            border_style="magenta",
+            show_lines=True,
+        )
+        table.add_column("Categoría", width=30)
+        table.add_column("Conceptos", justify="center", width=10)
+        table.add_column("Monto Total", justify="right", width=14)
+        table.add_column("Deducible", justify="right", width=14)
+        table.add_column("%", justify="right", width=7)
+        table.add_column("Alertas", width=4, justify="center")
+
+        # Ordenar por monto deducible descendente
+        cats_sorted = sorted(
+            resumen["por_categoria"].items(),
+            key=lambda x: float(x[1]["monto_deducible"]),
+            reverse=True,
+        )
+
+        for cat_id, cat_data in cats_sorted:
+            monto_orig = float(cat_data["monto_original"])
+            monto_ded = float(cat_data["monto_deducible"])
+            pct = cat_data["porcentaje"]
+            n_alertas = len(cat_data["alertas"])
+
+            if pct >= 100:
+                pct_style = "green"
+            elif pct > 0:
+                pct_style = "yellow"
+            else:
+                pct_style = "red"
+
+            table.add_row(
+                cat_data["nombre"][:30],
+                str(cat_data["num_conceptos"]),
+                f"${monto_orig:,.2f}",
+                f"[{pct_style}]${monto_ded:,.2f}[/{pct_style}]",
+                f"[{pct_style}]{pct:.0f}%[/{pct_style}]",
+                f"[yellow]{n_alertas}[/yellow]" if n_alertas else "[dim]-[/dim]",
+            )
+
+        # Totales
+        total_orig = float(resumen["total_original"])
+        total_ded = float(resumen["total_deducible"])
+        total_no_ded = float(resumen["total_no_deducible"])
+        pct_global = resumen["porcentaje_global"]
+
+        table.add_row(
+            "[bold]TOTAL[/bold]",
+            "",
+            f"[bold]${total_orig:,.2f}[/bold]",
+            f"[bold green]${total_ded:,.2f}[/bold green]",
+            f"[bold]{pct_global:.0f}%[/bold]",
+            "",
+            end_section=True,
+        )
+        console.print(table)
+
+        console.print(f"\n  [red]No deducible:[/red] ${total_no_ded:,.2f}")
+
+        if resumen["num_no_clasificados"] > 0:
+            console.print(
+                f"  [yellow]{resumen['num_no_clasificados']} conceptos con baja "
+                f"confianza de clasificación[/yellow]"
+            )
+
+        # Mostrar alertas principales
+        if resumen["alertas"]:
+            console.print("\n[bold yellow]Alertas:[/bold yellow]")
+            for alerta in resumen["alertas"][:5]:
+                console.print(f"  [yellow]![/yellow] {alerta}")
+
+    def _fiscal_sugerencias(self):
+        console.print("\n[bold]Sugerencias de Optimización Fiscal[/bold]")
+        year = IntPrompt.ask("Año", default=CURRENT_YEAR)
+
+        recibidas = self._fiscal_get_recibidas(year)
+        if not recibidas:
+            console.print("[yellow]No hay facturas recibidas para analizar.[/yellow]")
+            return
+
+        # Calcular ingresos anuales
+        ingresos = 0.0
+        for month in range(1, 13):
+            se = self.db.monthly_summary(year, month, "emitida")
+            ingresos += se["ingresos"]
+
+        clasificador = self._get_clasificador()
+
+        console.print(f"[dim]Analizando {len(recibidas)} facturas...[/dim]")
+        sugerencias = clasificador.generar_sugerencias(recibidas, ingresos)
+
+        # Intentar sugerencias de IA si está configurada
+        if self.config and self.config.ia and self.config.ia.api_key:
+            try:
+                from ..fiscal.ia_fiscal import AsistenteFiscal
+                asistente = AsistenteFiscal(
+                    api_key=self.config.ia.api_key,
+                    regimen=self._get_regimen(),
+                    actividad=(
+                        self.config.contribuyente.actividad
+                        if self.config.contribuyente else ""
+                    ),
+                    model=self.config.ia.model,
+                )
+                resumen = clasificador.resumen_periodo(recibidas)
+                ia_sugerencias = asistente.generar_sugerencias(resumen, ingresos)
+                sugerencias.extend(ia_sugerencias)
+            except Exception as e:
+                console.print(f"[dim]IA no disponible: {e}[/dim]")
+
+        if not sugerencias:
+            console.print("[green]No se encontraron sugerencias adicionales.[/green]")
+            return
+
+        console.print()
+        for i, sug in enumerate(sugerencias, 1):
+            prioridad_color = {1: "red", 2: "yellow", 3: "dim"}.get(sug.prioridad, "dim")
+            ahorro_text = ""
+            if sug.ahorro_estimado:
+                ahorro_text = f" [green](ahorro estimado: ${float(sug.ahorro_estimado):,.2f})[/green]"
+
+            console.print(Panel(
+                f"{sug.descripcion}{ahorro_text}",
+                title=f"[{prioridad_color}]{i}. {sug.titulo}[/{prioridad_color}]",
+                border_style=prioridad_color,
+                width=80,
+            ))
+
+        console.print(
+            "\n[dim]* Estas sugerencias son educativas y no sustituyen "
+            "asesoría fiscal profesional.[/dim]"
+        )
+
+    def _fiscal_consultar_cfdi(self):
+        uuid_input = Prompt.ask("UUID del CFDI a analizar")
+        if not uuid_input:
+            return
+
+        prefix = uuid_input.upper().strip()
+        rows = self.conn.execute(
+            "SELECT uuid FROM comprobantes WHERE uuid LIKE ? LIMIT 5",
+            (f"{prefix}%",),
+        ).fetchall()
+
+        if not rows:
+            console.print(f"[yellow]No se encontró CFDI con UUID '{prefix}...'[/yellow]")
+            return
+        if len(rows) > 1:
+            console.print("[yellow]Múltiples coincidencias:[/yellow]")
+            for r in rows:
+                console.print(f"  {r['uuid']}")
+            return
+
+        cfdi = self.db.get_by_uuid(rows[0]["uuid"])
+        if not cfdi:
+            return
+
+        if not cfdi.conceptos:
+            console.print("[yellow]Este CFDI no tiene conceptos (datos de Metadata).[/yellow]")
+            return
+
+        clasificador = self._get_clasificador()
+        resumen = clasificador.resumen_deduccion(cfdi)
+
+        # Mostrar info del CFDI
+        tipo_color = "green" if cfdi.tipo == "emitida" else "cyan"
+        console.print(Panel(
+            f"[bold]{cfdi.nombre_emisor}[/bold] → [bold]{cfdi.nombre_receptor}[/bold]\n"
+            f"Fecha: {cfdi.fecha.strftime('%d/%m/%Y')}  |  "
+            f"Total: [bold]${float(cfdi.total):,.2f}[/bold]  |  "
+            f"Forma pago: {cfdi.forma_pago or 'N/A'}",
+            title=f"CFDI {cfdi.uuid[:8]}...",
+            border_style=tipo_color,
+        ))
+
+        # Tabla de conceptos con clasificación
+        table = Table(
+            title="Análisis de Deducibilidad",
+            title_style="bold magenta",
+            border_style="magenta",
+            show_lines=True,
+        )
+        table.add_column("#", width=3, style="dim")
+        table.add_column("Concepto", width=30)
+        table.add_column("Clave SAT", width=10)
+        table.add_column("Categoría", width=18)
+        table.add_column("Monto", justify="right", width=12)
+        table.add_column("Deducible", justify="right", width=12)
+        table.add_column("%", justify="right", width=6)
+
+        for i, clas in enumerate(resumen["clasificaciones"], 1):
+            ded_style = "green" if clas.es_deducible else "red"
+            table.add_row(
+                str(i),
+                clas.concepto_descripcion[:30],
+                clas.clave_prod_serv[:10],
+                clas.categoria[:18],
+                f"${float(clas.monto_original):,.2f}",
+                f"[{ded_style}]${float(clas.monto_deducible):,.2f}[/{ded_style}]",
+                f"{clas.porcentaje_deducible:.0f}%",
+            )
+
+        pct = resumen["porcentaje_deducible"]
+        table.add_row(
+            "", "", "", "[bold]TOTAL[/bold]",
+            f"[bold]${float(resumen['total_original']):,.2f}[/bold]",
+            f"[bold green]${float(resumen['total_deducible']):,.2f}[/bold green]",
+            f"[bold]{pct:.0f}%[/bold]",
+            end_section=True,
+        )
+        console.print(table)
+
+        # Detalle de cada clasificación
+        for i, clas in enumerate(resumen["clasificaciones"], 1):
+            console.print(f"\n  [bold]Concepto {i}:[/bold] {clas.concepto_descripcion}")
+            console.print(f"    Fundamento: {clas.fundamento_legal}")
+            if clas.requisitos:
+                console.print(f"    Requisitos: {', '.join(clas.requisitos)}")
+            for alerta in clas.alertas:
+                console.print(f"    [yellow]! {alerta}[/yellow]")
+
+        # Alertas generales
+        if resumen["alertas"]:
+            console.print("\n[bold yellow]Alertas del comprobante:[/bold yellow]")
+            for alerta in resumen["alertas"]:
+                console.print(f"  [yellow]![/yellow] {alerta}")

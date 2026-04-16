@@ -1,0 +1,317 @@
+# Reglas de deducibilidad por régimen fiscal.
+# Fuente: Ley del Impuesto Sobre la Renta (LISR) vigente 2024-2026.
+# NOTA: Este archivo es una guía educativa, no sustituye asesoría fiscal profesional.
+
+# ─── Valor de UMA (Unidad de Medida y Actualización) ─────────────────────────
+[uma]
+valor_diario = 117.31      # UMA diario 2026 (1-feb-2026 al 31-ene-2027, DOF 09/01/2026)
+valor_mensual = 3566.22     # UMA mensual 2026
+valor_anual = 42794.64      # UMA anual 2026
+# Tope deducciones personales: 5 UMA anuales = $213,973.20 (2026)
+# Tope gastos funerarios: 1 UMA anual = $42,794.64 (2026)
+
+# ─── Régimen 612: Persona Física con Actividad Empresarial y Profesional ─────
+[regimenes."612"]
+nombre = "Personas Físicas con Actividades Empresariales y Profesionales"
+fundamento = "LISR Capítulo II, Sección I, Art. 100-110"
+descripcion = "Ingresos por actividades empresariales (comerciales, industriales, agrícolas, ganaderas, silvícolas, pesqueras) y profesionales (prestación de servicios independientes)"
+
+# ── Deducciones autorizadas (Art. 103 LISR) ──────────────────────────────────
+# Cada categoría tiene: nombre, porcentaje deducible, fundamento, requisitos,
+# y opcionalmente: limite_monto, forma_pago_requerida, claves_sat (patrones)
+
+[regimenes."612".deducciones.devoluciones]
+nombre = "Devoluciones, descuentos o bonificaciones"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. I LISR"
+requisitos = ["CFDI de tipo Egreso"]
+
+[regimenes."612".deducciones.costo_ventas]
+nombre = "Adquisiciones de mercancías y materias primas"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. II LISR"
+requisitos = ["CFDI válido", "Estrictamente indispensable para la actividad"]
+
+[regimenes."612".deducciones.gastos_operacion]
+nombre = "Gastos estrictamente indispensables"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Estrictamente indispensable para la actividad", "Efectivamente pagado en el ejercicio"]
+
+[regimenes."612".deducciones.inversiones]
+nombre = "Inversiones (depreciación)"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. IV LISR, Art. 31-38 LISR"
+requisitos = ["CFDI válido", "Deducción por depreciación según Art. 31-38"]
+nota = "Se deduce vía depreciación anual, no el monto total"
+
+[regimenes."612".deducciones.intereses_prestamos]
+nombre = "Intereses pagados por préstamos empresariales"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. V LISR"
+requisitos = ["Préstamo utilizado para la actividad empresarial", "CFDI o estado de cuenta"]
+
+[regimenes."612".deducciones.cuotas_imss]
+nombre = "Cuotas patronales al IMSS"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. VI LISR"
+requisitos = ["Comprobante de pago al IMSS"]
+
+[regimenes."612".deducciones.impuesto_local]
+nombre = "Impuesto local sobre ingresos por actividad empresarial"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. VII LISR"
+requisitos = ["Comprobante de pago del impuesto"]
+
+# ── Reglas especiales por tipo de gasto ───────────────────────────────────────
+
+[regimenes."612".deducciones.alimentos_restaurante]
+nombre = "Consumo en restaurantes"
+porcentaje = 91.5
+fundamento = "Art. 28 Fracc. XX LISR"
+requisitos = ["Pago con tarjeta de crédito, débito o monedero electrónico", "CFDI válido", "Propina no deducible"]
+forma_pago_requerida = ["03", "04", "28", "29"]
+nota = "Solo 91.5% del consumo sin propina. Pago en efectivo = NO deducible"
+
+[regimenes."612".deducciones.combustible]
+nombre = "Combustibles para vehículos"
+porcentaje = 100
+fundamento = "Art. 27 Fracc. III LISR"
+requisitos = ["Pago con medio electrónico (transferencia, tarjeta, monedero)", "CFDI válido"]
+forma_pago_requerida = ["03", "04", "28", "29"]
+nota = "Pago en efectivo = NO deducible. Debe ser combustible para vehículos de la actividad"
+
+[regimenes."612".deducciones.vehiculos_inversion]
+nombre = "Automóviles (inversión)"
+porcentaje = 25
+fundamento = "Art. 34 Fracc. VI, Art. 36 Fracc. II LISR"
+limite_monto = 175000.0
+requisitos = ["MOI máximo deducible $175,000", "Depreciación 25% anual", "Uso empresarial"]
+nota = "Para autos de hasta $175,000 de MOI. Aplica depreciación anual del 25%"
+
+[regimenes."612".deducciones.vehiculos_electricos]
+nombre = "Automóviles eléctricos (inversión)"
+porcentaje = 25
+fundamento = "Art. 36 Fracc. II LISR"
+limite_monto = 250000.0
+requisitos = ["MOI máximo deducible $250,000", "Vehículo eléctrico o híbrido", "Depreciación 25% anual"]
+
+[regimenes."612".deducciones.renta_vehiculos]
+nombre = "Renta de automóviles"
+porcentaje = 100
+fundamento = "Art. 28 Fracc. XIII LISR"
+limite_monto_diario = 200.0
+requisitos = ["Monto diario máximo deducible $200/día (combustión) o $285/día (eléctricos/híbridos)", "Uso empresarial"]
+nota = "Para renta, el límite es $200 diarios por vehículo de combustión o $285 para eléctricos/híbridos"
+
+[regimenes."612".deducciones.viaticos]
+nombre = "Viáticos y gastos de viaje"
+porcentaje = 100
+fundamento = "Art. 28 Fracc. V LISR"
+requisitos = ["Viaje a más de 50km del establecimiento", "Hospedaje máximo $3,850/día nacional, $4,900/día extranjero", "Alimentos máximo $750/día nacional, $1,500/día extranjero"]
+
+[regimenes."612".deducciones.seguros]
+nombre = "Primas de seguros"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["Seguros relacionados con la actividad", "CFDI válido"]
+
+[regimenes."612".deducciones.telecomunicaciones]
+nombre = "Servicios de telecomunicaciones"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Servicio utilizado para la actividad"]
+nota = "Internet, teléfono, servicios de nube - deducibles si son para la actividad"
+
+[regimenes."612".deducciones.renta_inmueble]
+nombre = "Renta de local u oficina"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Inmueble usado para la actividad", "Contrato de arrendamiento"]
+
+[regimenes."612".deducciones.servicios_profesionales]
+nombre = "Honorarios por servicios profesionales"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Servicio relacionado con la actividad"]
+
+[regimenes."612".deducciones.papeleria_oficina]
+nombre = "Papelería y artículos de oficina"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."612".deducciones.servicios_basicos]
+nombre = "Electricidad, agua y servicios básicos"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Servicio del local o domicilio fiscal"]
+nota = "Si se usa domicilio particular, deducible en proporción al uso empresarial"
+
+[regimenes."612".deducciones.software_licencias]
+nombre = "Software y licencias"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR (gasto) o Art. 33 LISR (inversión)"
+requisitos = ["CFDI válido"]
+nota = "Suscripciones = gasto deducible. Compra de licencia perpetua = inversión (depreciable)"
+
+[regimenes."612".deducciones.mantenimiento_equipo]
+nombre = "Mantenimiento y reparación de equipo"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Equipo utilizado en la actividad"]
+
+[regimenes."612".deducciones.capacitacion]
+nombre = "Capacitación y formación profesional"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI válido", "Relacionado con la actividad empresarial"]
+
+# ── Deducciones personales (Art. 151 LISR) ───────────────────────────────────
+# Aplican a TODAS las personas físicas en su declaración anual
+# Límite global: 15% del ingreso anual o 5 UMA anuales (lo que sea menor)
+
+[regimenes."612".deducciones_personales]
+limite_global = "15% ingreso anual o 5 UMA anuales"
+fundamento_limite = "Art. 151 último párrafo LISR"
+
+[regimenes."612".deducciones_personales.honorarios_medicos]
+nombre = "Honorarios médicos, dentales, psicología y nutrición"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. I LISR"
+requisitos = ["CFDI válido", "Pago con medio electrónico", "Servicios prestados por profesional con título"]
+forma_pago_requerida = ["03", "04", "28", "29"]
+nota = "Incluye al contribuyente, cónyuge, concubino, ascendientes y descendientes en línea recta"
+
+[regimenes."612".deducciones_personales.gastos_hospitalarios]
+nombre = "Gastos hospitalarios y medicinas en factura de hospital"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. I LISR"
+requisitos = ["CFDI de hospital", "Medicinas incluidas en la factura del hospital"]
+nota = "Medicinas compradas por separado en farmacia NO son deducibles"
+
+[regimenes."612".deducciones_personales.gastos_funerarios]
+nombre = "Gastos funerarios"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. II LISR"
+limite_uma_anual = 1
+requisitos = ["CFDI válido", "Límite: 1 UMA anual"]
+
+[regimenes."612".deducciones_personales.donativos]
+nombre = "Donativos a instituciones autorizadas"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. III LISR"
+limite = "7% de la utilidad fiscal del ejercicio anterior"
+requisitos = ["Donataria autorizada por SAT", "CFDI válido"]
+nota = "No sujeto al límite global del 15%"
+
+[regimenes."612".deducciones_personales.intereses_hipotecarios]
+nombre = "Intereses reales de créditos hipotecarios"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. IV LISR"
+limite = "Créditos no mayores a 750,000 UDIS"
+requisitos = ["Constancia de intereses del banco", "Casa habitación del contribuyente"]
+
+[regimenes."612".deducciones_personales.aportaciones_retiro]
+nombre = "Aportaciones complementarias de retiro"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. V LISR"
+limite = "10% del ingreso acumulable o 5 UMA anuales"
+requisitos = ["Cuenta personal de ahorro para el retiro", "Planes personales de retiro"]
+nota = "No sujeto al límite global del 15%"
+
+[regimenes."612".deducciones_personales.primas_seguros_medicos]
+nombre = "Primas de seguros de gastos médicos"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. VI LISR"
+requisitos = ["Póliza complementaria o independiente", "CFDI o constancia de la aseguradora"]
+
+[regimenes."612".deducciones_personales.transporte_escolar]
+nombre = "Transporte escolar obligatorio"
+porcentaje = 100
+fundamento = "Art. 151 Fracc. VII LISR"
+requisitos = ["CFDI válido", "Transporte escolar obligatorio para el plantel"]
+
+[regimenes."612".deducciones_personales.colegiaturas]
+nombre = "Colegiaturas (estímulo fiscal)"
+porcentaje = 100
+fundamento = "Decreto DOF 26/12/2013, Art. 1.8"
+nota = "No sujeto al límite global del 15%"
+
+[regimenes."612".deducciones_personales.colegiaturas.limites_anuales]
+preescolar = 14200
+primaria = 12900
+secundaria = 19900
+profesional_tecnico = 17100
+bachillerato = 24500
+
+# ── Tasas de depreciación fiscal (Art. 34 LISR) ──────────────────────────────
+
+[depreciacion]
+[depreciacion.construcciones]
+tasa_anual = 5
+fundamento = "Art. 34 Fracc. I LISR"
+
+[depreciacion.mobiliario_equipo_oficina]
+tasa_anual = 10
+fundamento = "Art. 34 Fracc. III LISR"
+
+[depreciacion.automoviles]
+tasa_anual = 25
+fundamento = "Art. 34 Fracc. VI LISR"
+
+[depreciacion.equipo_computo]
+tasa_anual = 30
+fundamento = "Art. 34 Fracc. VII LISR"
+
+[depreciacion.maquinaria_equipo]
+tasa_anual = 10
+fundamento = "Art. 34 Fracc. III LISR"
+nota = "Tasa general; varía por industria (Art. 35 LISR)"
+
+[depreciacion.equipo_comunicaciones]
+tasa_anual = 10
+fundamento = "Art. 34 Fracc. VIII LISR"
+
+[depreciacion.equipo_transporte]
+tasa_anual = 25
+fundamento = "Art. 34 Fracc. VI LISR"
+
+# ── Régimen 626: Simplificado de Confianza (RESICO) ─────────────────────────
+[regimenes."626"]
+nombre = "Régimen Simplificado de Confianza"
+fundamento = "LISR Art. 113-E a 113-J"
+descripcion = "Régimen simplificado con tasa fija sobre ingresos, sin deducciones autorizadas empresariales"
+nota = "RESICO no permite deducciones de gastos empresariales. Solo aplican deducciones personales en declaración anual."
+
+[regimenes."626".deducciones_personales]
+limite_global = "15% ingreso anual o 5 UMA anuales"
+nota = "Mismas deducciones personales que régimen 612 (Art. 151 LISR)"
+
+# ── Requisitos generales de deducción (Art. 27 y 105 LISR) ──────────────────
+[requisitos_generales]
+[requisitos_generales.pago_bancarizado]
+descripcion = "Pagos mayores a $2,000 deben ser con medio electrónico"
+limite_efectivo = 2000.0
+fundamento = "Art. 27 Fracc. III LISR"
+formas_pago_validas = ["02", "03", "04", "05", "06", "28", "29"]
+# 02=Cheque, 03=Transferencia, 04=Tarjeta crédito, 05=Monedero electrónico
+# 06=Dinero electrónico, 28=Tarjeta débito, 29=Tarjeta servicios
+nota = "Pagos en efectivo mayores a $2,000 NO son deducibles"
+
+[requisitos_generales.cfdi_vigente]
+descripcion = "Contar con CFDI vigente (no cancelado)"
+fundamento = "Art. 27 Fracc. XVIII LISR"
+
+[requisitos_generales.estrictamente_indispensable]
+descripcion = "El gasto debe ser estrictamente indispensable para la actividad"
+fundamento = "Art. 27 Fracc. I LISR"
+
+[requisitos_generales.registrado_contabilidad]
+descripcion = "Estar registrado en contabilidad"
+fundamento = "Art. 27 Fracc. IV LISR"
+
+[requisitos_generales.efectivamente_pagado]
+descripcion = "Para personas físicas, el gasto debe estar efectivamente pagado"
+fundamento = "Art. 105 LISR"
+nota = "A diferencia de personas morales que pueden deducir en base a lo devengado"

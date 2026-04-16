@@ -11,6 +11,9 @@ dependencies = [
     "cryptography>=41.0",
 ]
 
+[project.optional-dependencies]
+ia = ["anthropic>=0.40"]
+
 [project.scripts]
 satextractor = "satextractor.__main__:main"
 

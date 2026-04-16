@@ -10,6 +10,8 @@ Herramienta de línea de comandos para descargar, almacenar y analizar facturas 
 - **Visualizador interactivo** en terminal con dashboard anual, detalle mensual, búsquedas y más
 - **Exportación a Excel** con reportes mensuales y anuales
 - **Cálculo de impuestos provisionales** (IVA a pagar e ISR provisional estimado)
+- **Análisis fiscal inteligente** — clasificación automática de gastos deducibles/no deducibles según régimen fiscal, con reglas basadas en la LISR vigente
+- **Integración con IA** (opcional) — usa Claude API para clasificar gastos ambiguos y generar sugerencias de optimización fiscal
 
 ## Requisitos
 
@@ -25,6 +27,9 @@ cd sat-extractor
 python3 -m venv .venv
 source .venv/bin/activate
 pip install cfdiclient lxml openpyxl rich cryptography
+
+# Opcional: para análisis fiscal con IA
+pip install anthropic
 ```
 
 ## Configuración
@@ -50,6 +55,14 @@ path = "~/satextractor.db"
 
 [export]
 output_dir = "~/reportes_sat"
+
+# Opcional: análisis fiscal inteligente
+[contribuyente]
+regimen = "612"                  # 612=PFAE, 626=RESICO
+
+[ia]
+# api_key = ""                   # O usa ANTHROPIC_API_KEY env var
+# model = "claude-sonnet-4-6"
 ```
 
 ## Uso
@@ -76,6 +89,7 @@ Menú Principal
   [2] Importar XMLs desde directorio
   [3] Visualizar datos
   [4] Exportar a Excel
+  [5] Análisis Fiscal Inteligente
   [0] Salir
 ```
 
@@ -201,6 +215,65 @@ Descargando recibidas: 2025-01-01 → 2025-03-31
   45 CFDI(s) desde Metadata
 recibidas 2025-01-01 → 2025-01-31 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100%
 ```
+
+### Análisis Fiscal Inteligente
+
+```
+Análisis Fiscal Inteligente
+Régimen: 612
+
+  [1] Clasificar deducciones del periodo
+  [2] Resumen por categoría de gasto
+  [3] Sugerencias de optimización
+  [4] Consultar deducibilidad de un CFDI
+  [0] Volver
+```
+
+#### Clasificar deducciones
+
+Analiza cada concepto de las facturas recibidas y determina si es deducible según el régimen fiscal configurado:
+
+```
+               Deducciones - 2025
+┌───┬──────────┬──────────────────────┬──────────────────┬─────────────┬─────────────┬──────┬───┐
+│ # │ Fecha    │ Concepto             │ Categoría        │       Monto │   Deducible │    % │   │
+├───┼──────────┼──────────────────────┼──────────────────┼─────────────┼─────────────┼──────┼───┤
+│ 1 │ 05/03    │ Servicio de internet │ telecomunicacion │     $699.00 │     $699.00 │ 100% │ V │
+│ 2 │ 10/03    │ Comida ejecutiva     │ alimentos_rest.  │   $2,500.00 │   $2,287.50 │  92% │ V │
+│ 3 │ 15/03    │ Gasolina Premium     │ combustible      │     $980.00 │     $980.00 │ 100% │ V │
+│ 4 │ 20/03    │ Laptop Dell XPS      │ equipo_computo   │  $35,000.00 │  $10,500.00 │ 100% │ ! │
+│ 5 │ 25/03    │ Cena en restaurante  │ alimentos_rest.  │   $1,800.00 │       $0.00 │   0% │ X │
+└───┴──────────┴──────────────────────┴──────────────────┴─────────────┴─────────────┴──────┴───┘
+  V=deducible  !=alertas  ?=baja confianza  X=no deducible
+```
+
+Reglas implementadas:
+- **Restaurantes**: 91.5% deducible solo con pago con tarjeta (Art. 28 Fracc. XX LISR)
+- **Combustibles**: 100% deducible solo con pago electrónico (Art. 27 Fracc. III LISR)
+- **Inversiones**: deducción por depreciación fiscal (equipo cómputo 30%, vehículos 25%, mobiliario 10%)
+- **Pagos en efectivo > $2,000**: NO deducibles (Art. 27 Fracc. III LISR)
+- **CFDIs cancelados**: NO deducibles
+- **Deducciones personales**: médicos, colegiaturas, funerarios, etc. (Art. 151 LISR)
+- Soporte para régimen 612 (PFAE) y 626 (RESICO)
+
+#### Sugerencias de optimización
+
+Genera recomendaciones personalizadas basadas en los patrones de gasto:
+
+```
+╭─ 1. Restaurantes pagados en efectivo ──────────────────────────────────────╮
+│ Tienes $15,000 en restaurantes pagados en efectivo. Si pagas con tarjeta,  │
+│ el 91.5% sería deducible. (ahorro estimado: $4,117.50)                     │
+╰────────────────────────────────────────────────────────────────────────────╯
+╭─ 2. Sin deducciones personales registradas ────────────────────────────────╮
+│ No se encontraron gastos médicos, colegiaturas ni otras deducciones        │
+│ personales (Art. 151 LISR).                                                │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+* Estas sugerencias son educativas y no sustituyen asesoría fiscal profesional.
+```
+
+Si se configura la API de Claude (`[ia]` en config.toml o variable `ANTHROPIC_API_KEY`), las sugerencias se enriquecen con análisis de IA. Sin API, el motor funciona al 100% con reglas locales.
 
 ## Exportación a Excel
 

@@ -1,0 +1,260 @@
+# Mapeo de claves c_ClaveProdServ del SAT a categorías fiscales de deducción.
+# Las claves pueden ser exactas o prefijos (se buscan por coincidencia de prefijo).
+# Fuente: Catálogo c_ClaveProdServ del Anexo 20 del SAT.
+
+# ── Alimentos y restaurantes ─────────────────────────────────────────────────
+[categorias.alimentos_restaurante]
+descripcion = "Alimentos preparados y servicios de restaurante"
+deduccion = "alimentos_restaurante"
+claves = [
+    "90101500", "90101501", "90101502", "90101503",  # Restaurantes y catering
+    "90101600", "90101601",                           # Servicios de banquetes
+    "50192100", "50192101", "50192102",               # Alimentos preparados
+    "50202300",                                        # Productos de panadería
+]
+prefijos = ["9010"]  # Servicios de restaurante en general
+
+# ── Combustibles ──────────────────────────────────────────────────────────────
+[categorias.combustible]
+descripcion = "Combustibles y lubricantes para vehículos"
+deduccion = "combustible"
+claves = [
+    "15101500", "15101501", "15101502", "15101503",  # Petróleo y destilados
+    "15101504", "15101505", "15101506",               # Diesel
+    "15101513",                                        # Diesel fuera de carretera
+    "15101514",                                        # Gasolina Magna (<91 octanos)
+    "15101515",                                        # Gasolina Premium (>=91 octanos)
+    "15101700", "15101701", "15101702",               # Combustibles gaseosos
+    "15121500", "15121501", "15121502",               # Lubricantes y aceites
+]
+prefijos = ["151015", "151017"]
+
+# ── Servicios profesionales ───────────────────────────────────────────────────
+[categorias.servicios_profesionales]
+descripcion = "Honorarios y servicios profesionales"
+deduccion = "servicios_profesionales"
+claves = [
+    "80101500", "80101501", "80101502", "80101503",  # Consultoría de negocios
+    "80101504", "80101505", "80101506", "80101507",
+    "80111500", "80111501", "80111502", "80111503",  # Servicios de contabilidad
+    "80111600", "80111601", "80111602", "80111603",  # Servicios de auditoría
+    "84111500",                                        # Servicios de contabilidad (alt)
+    "80121500", "80121501", "80121502", "80121503",  # Servicios legales
+    "80121600", "80121601", "80121604",               # Servicios legales esp.
+    "80131500", "80131501", "80131502",               # Servicios de publicidad
+    "80141500", "80141501", "80141600",               # Investigación de mercado
+    "80161500", "80161501", "80161502",               # Servicios de gestión
+]
+prefijos = ["8010", "8011", "8012", "8013", "8014", "8016"]
+
+# ── Equipo de cómputo ────────────────────────────────────────────────────────
+[categorias.equipo_computo]
+descripcion = "Equipo de cómputo y periféricos"
+deduccion = "inversiones"
+tipo_inversion = "equipo_computo"
+claves = [
+    "43211500", "43211501", "43211502", "43211503",  # Computadoras
+    "43211504", "43211505", "43211506", "43211507",
+    "43211508", "43211509",
+    "43211600", "43211601", "43211602", "43211603",  # Laptops
+    "43211700", "43211701", "43211702",               # Tablets
+    "43212100", "43212101", "43212102", "43212103",  # Impresoras
+    "43211800", "43211801",                           # Servidores
+    "43201800", "43201801", "43201802", "43201803",  # Monitores
+    "43202000", "43202001", "43202002", "43202003",  # Dispositivos almacenamiento
+]
+prefijos = ["4321", "4320"]
+
+# ── Software y licencias ─────────────────────────────────────────────────────
+[categorias.software_licencias]
+descripcion = "Software, licencias y suscripciones digitales"
+deduccion = "software_licencias"
+claves = [
+    "43231500", "43231501", "43231502", "43231503",  # Software de aplicación
+    "43231504", "43231505", "43231506", "43231507",
+    "43231508", "43231509", "43231510", "43231511",
+    "43231512", "43231513", "43231600", "43231601",  # Software de red
+    "43232300", "43232301", "43232302", "43232303",  # Software de seguridad
+    "43232400", "43232401", "43232402",               # Software multimedia
+    "43232500", "43232501", "43232502",               # Software educativo
+    "43233000", "43233001", "43233002", "43233003",  # Licencias de software
+    "43233004", "43233005",
+    "81111500", "81111501", "81111502", "81111503",  # Servicios de software
+    "81111504", "81111505", "81111506", "81111507",
+    "81111508",
+    "81112200", "81112201", "81112202", "81112203",  # Servicios de nube
+]
+prefijos = ["4323", "8111"]
+
+# ── Telecomunicaciones ────────────────────────────────────────────────────────
+[categorias.telecomunicaciones]
+descripcion = "Internet, telefonía y comunicaciones"
+deduccion = "telecomunicaciones"
+claves = [
+    "81161700", "81161701", "81161702", "81161703",  # Servicios de internet
+    "81161704",
+    "83111500", "83111501", "83111502", "83111503",  # Telefonía local/LD
+    "83111504", "83111505", "83111506",
+    "83111600", "83111601", "83111602",               # Telefonía móvil
+    "83111800", "83111801", "83111802",               # Servicios de datos
+]
+prefijos = ["8316", "8311"]
+
+# ── Papelería y artículos de oficina ──────────────────────────────────────────
+[categorias.papeleria_oficina]
+descripcion = "Papelería, artículos de oficina y consumibles"
+deduccion = "papeleria_oficina"
+claves = [
+    "14111700",                                        # Papel para oficina
+    "44103100",                                        # Tóner, cartuchos (impresora/fax)
+    "44121500", "44121501", "44121502", "44121503",  # Papel para impresora
+    "44121600", "44121601", "44121602", "44121603",  # Carpetas, sobres
+    "44121700", "44121701", "44121702", "44121703",  # Instrumentos de escritura
+    "44121800", "44121801", "44121802",               # Artículos de escritura
+    "44121900", "44121901", "44121902",               # Correctores
+    "44122000", "44122001", "44122002", "44122003",  # Grapadoras, clips
+    "44111500", "44111501", "44111502", "44111503",  # Tóner, cartuchos
+]
+prefijos = ["4412", "4411", "4410"]
+
+# ── Renta de inmuebles ────────────────────────────────────────────────────────
+[categorias.renta_inmueble]
+descripcion = "Arrendamiento de oficinas y locales comerciales"
+deduccion = "renta_inmueble"
+claves = [
+    "80131800", "80131801", "80131802",               # Renta de espacio de oficina
+    "80141900", "80141901",                           # Arrendamiento inmobiliario
+    "95121600", "95121601", "95121602", "95121603",  # Renta de locales
+    "95121700", "95121701",                           # Renta de bodegas
+]
+prefijos = ["8013", "9512"]
+
+# ── Seguros ───────────────────────────────────────────────────────────────────
+[categorias.seguros]
+descripcion = "Pólizas y primas de seguros"
+deduccion = "seguros"
+claves = [
+    "84131500", "84131501", "84131502", "84131503",  # Seguros de vida
+    "84131504", "84131505",
+    "84131600", "84131601", "84131602", "84131603",  # Seguros de propiedad
+    "84131700", "84131701", "84131702",               # Seguros de auto
+    "84131800", "84131801",                           # Seguros de salud
+]
+prefijos = ["8413"]
+
+# ── Servicios médicos (deducción personal) ────────────────────────────────────
+[categorias.servicios_medicos]
+descripcion = "Servicios médicos, dentales, hospitalarios, psicología y nutrición"
+deduccion_personal = "honorarios_medicos"
+claves = [
+    "85101500", "85101501", "85101502", "85101503",  # Consultas médicas
+    "85101504", "85101505", "85101506",
+    "85101600", "85101601", "85101602", "85101603",  # Cirugía
+    "85101700", "85101701", "85101702",               # Hospitalización
+    "85121500", "85121501", "85121502", "85121503",  # Servicios dentales
+    "85121600", "85121601",                           # Ortodoncia
+    "85101800", "85101801", "85101802",               # Servicios psicológicos
+    "85111500", "85111501", "85111502",               # Laboratorios
+    "85111600", "85111601", "85111602",               # Imagenología
+    "42180000",                                        # Equipo médico
+]
+prefijos = ["8510", "8511", "8512"]
+
+# ── Educación y colegiaturas (deducción personal) ─────────────────────────────
+[categorias.educacion]
+descripcion = "Servicios educativos y colegiaturas"
+deduccion_personal = "colegiaturas"
+claves = [
+    "86101700", "86101701", "86101702", "86101703",  # Educación primaria
+    "86101710",
+    "86101800", "86101801", "86101802",               # Educación secundaria
+    "86101900", "86101901", "86101902",               # Educación preparatoria
+    "86102000", "86102001", "86102002",               # Educación profesional técnica
+    "86111600", "86111601", "86111602",               # Educación preescolar
+    "86132200", "86132201",                           # Academias/capacitación
+]
+prefijos = ["8610", "8611", "8613"]
+
+# ── Transporte y viáticos ─────────────────────────────────────────────────────
+[categorias.transporte]
+descripcion = "Servicios de transporte, hospedaje y viáticos"
+deduccion = "viáticos"
+claves = [
+    "78101800", "78101801", "78101802", "78101803",  # Transporte aéreo
+    "78111500", "78111501", "78111502",               # Transporte terrestre
+    "78111800", "78111801", "78111802", "78111803",  # Alquiler de vehículos
+    "90101700", "90101701", "90101702",               # Hospedaje
+    "90111500", "90111501", "90111502", "90111503",  # Hoteles
+    "90111600", "90111601",                           # Hostales/alojamiento
+    "78111900", "78111901",                           # Servicios de taxi
+]
+prefijos = ["7810", "7811", "9011"]
+
+# ── Mantenimiento y reparación ────────────────────────────────────────────────
+[categorias.mantenimiento_equipo]
+descripcion = "Mantenimiento y reparación de equipos"
+deduccion = "mantenimiento_equipo"
+claves = [
+    "72151500", "72151501", "72151502", "72151503",  # Mantenimiento industrial
+    "72151800", "72151801", "72151802",               # Mantenimiento de equipo
+    "72154000", "72154001", "72154002", "72154003",  # Reparación de equipo
+    "81112200", "81112201",                           # Mantenimiento de software
+    "43233200", "43233201",                           # Soporte técnico
+]
+prefijos = ["7215"]
+
+# ── Servicios básicos (electricidad, agua, gas) ───────────────────────────────
+[categorias.servicios_basicos]
+descripcion = "Electricidad, agua, gas y servicios públicos"
+deduccion = "servicios_basicos"
+claves = [
+    "12352200",                                        # Energía eléctrica (CFE)
+    "72141100",                                        # Suministro de agua
+    "83101800", "83101801", "83101802",               # Energía eléctrica
+    "83101500", "83101501", "83101502",               # Suministro de agua
+    "83101600", "83101601",                           # Gas natural
+]
+prefijos = ["8310"]
+
+# ── Mobiliario y equipo de oficina (inversión) ────────────────────────────────
+[categorias.mobiliario_oficina]
+descripcion = "Muebles y equipo de oficina"
+deduccion = "inversiones"
+tipo_inversion = "mobiliario_equipo_oficina"
+claves = [
+    "56101500", "56101501", "56101502", "56101503",  # Escritorios
+    "56101504", "56101505", "56101506",
+    "56101700", "56101701", "56101702", "56101703",  # Sillas de oficina
+    "56101800", "56101801", "56101802",               # Archiveros
+    "56111500", "56111501", "56111502",               # Estantes
+]
+prefijos = ["5610", "5611"]
+
+# ── Vehículos (inversión) ─────────────────────────────────────────────────────
+[categorias.vehiculos]
+descripcion = "Automóviles y vehículos de transporte"
+deduccion = "vehiculos_inversion"
+tipo_inversion = "automoviles"
+claves = [
+    "25101500", "25101501", "25101502", "25101503",  # Automóviles
+    "25101504", "25101505",
+    "25101600", "25101601", "25101602",               # Camionetas
+    "25101900", "25101901", "25101902",               # Motocicletas
+    "25181700", "25181701", "25181702",               # Vehículos de carga
+]
+prefijos = ["2510"]
+
+# ── Gastos funerarios (deducción personal) ────────────────────────────────────
+[categorias.gastos_funerarios]
+descripcion = "Servicios funerarios"
+deduccion_personal = "gastos_funerarios"
+claves = [
+    "92121700", "92121701", "92121702", "92121703",  # Servicios funerarios
+]
+prefijos = ["9212"]
+
+# ── Categoría por defecto ─────────────────────────────────────────────────────
+[categorias._default]
+descripcion = "Gasto no clasificado automáticamente"
+deduccion = "gastos_operacion"
+nota = "Requiere revisión manual o consulta a IA para determinar deducibilidad"

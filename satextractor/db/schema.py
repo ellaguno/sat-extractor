@@ -58,4 +58,24 @@ CREATE INDEX IF NOT EXISTS idx_comprobantes_rfc_receptor ON comprobantes(rfc_rec
 CREATE INDEX IF NOT EXISTS idx_comprobantes_tipo ON comprobantes(tipo);
 CREATE INDEX IF NOT EXISTS idx_comprobantes_tipo_comprobante ON comprobantes(tipo_comprobante);
 CREATE INDEX IF NOT EXISTS idx_conceptos_uuid ON conceptos(uuid);
+
+CREATE TABLE IF NOT EXISTS clasificaciones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clave_prod_serv TEXT NOT NULL,
+    descripcion_hash TEXT NOT NULL,
+    regimen TEXT NOT NULL,
+    categoria TEXT,
+    es_deducible INTEGER NOT NULL DEFAULT 0,
+    porcentaje REAL NOT NULL DEFAULT 0,
+    fundamento TEXT,
+    requisitos TEXT,
+    alertas TEXT,
+    fuente TEXT NOT NULL DEFAULT 'regla_local',
+    confianza REAL NOT NULL DEFAULT 1.0,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(clave_prod_serv, descripcion_hash, regimen)
+);
+
+CREATE INDEX IF NOT EXISTS idx_clasificaciones_clave
+    ON clasificaciones(clave_prod_serv, regimen);
 """

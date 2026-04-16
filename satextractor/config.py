@@ -34,11 +34,27 @@ class ExportConfig:
 
 
 @dataclass
+class ContribuyenteConfig:
+    regimen: str = "612"
+    actividad: str = ""
+
+
+@dataclass
+class IAConfig:
+    provider: str = "anthropic"
+    api_key: str = ""
+    model: str = "claude-sonnet-4-6"
+    cache_dias: int = 90
+
+
+@dataclass
 class Config:
     fiel: FielConfig
     sat: SATConfig
     database: DatabaseConfig
     export: ExportConfig
+    contribuyente: ContribuyenteConfig = None  # type: ignore[assignment]
+    ia: IAConfig = None  # type: ignore[assignment]
 
     @classmethod
     def load(cls, config_path: Path | None = None) -> "Config":
@@ -54,6 +70,8 @@ class Config:
         sat = data.get("sat", {})
         db = data.get("database", {})
         export = data.get("export", {})
+        contrib = data.get("contribuyente", {})
+        ia = data.get("ia", {})
 
         return cls(
             fiel=FielConfig(
@@ -67,6 +85,16 @@ class Config:
             ),
             export=ExportConfig(
                 output_dir=Path(export.get("output_dir", "~/reportes_sat")).expanduser(),
+            ),
+            contribuyente=ContribuyenteConfig(
+                regimen=contrib.get("regimen", "612"),
+                actividad=contrib.get("actividad", ""),
+            ),
+            ia=IAConfig(
+                provider=ia.get("provider", "anthropic"),
+                api_key=ia.get("api_key", ""),
+                model=ia.get("model", "claude-sonnet-4-6"),
+                cache_dias=ia.get("cache_dias", 90),
             ),
         )
 
