@@ -374,7 +374,7 @@ class ExcelExporter:
         row += 2
 
         # === SECCIÓN IMPUESTOS PROVISIONALES ===
-        fiscal = calcular_impuestos_mensuales(self.db, year)
+        fiscal = calcular_impuestos_mensuales(self.db, year, self.regimen)
 
         FISCAL_FILL = PatternFill(start_color="C65911", end_color="C65911", fill_type="solid")
         FISCAL_SECTION_FILL = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
@@ -386,10 +386,11 @@ class ExcelExporter:
         row += 1
 
         fisc_headers = [
-            "Mes", "IVA Cobrado", "IVA Acredit.", "IVA Retenido",
+            "Mes", "Ingresos", "Ded. Reales", "No Deducible",
+            "IVA Cobrado", "IVA Acredit.", "IVA Ret.",
             "IVA x Pagar", "Base ISR Acum.", "ISR Prov.", "Total x Pagar",
         ]
-        fisc_widths = [14, 16, 16, 14, 16, 16, 16, 16]
+        fisc_widths = [14, 16, 16, 14, 16, 16, 14, 16, 16, 16, 16]
         for col_idx, (h, w) in enumerate(zip(fisc_headers, fisc_widths), 1):
             cell = ws.cell(row=row, column=col_idx, value=h)
             cell.fill = FISCAL_FILL
@@ -401,10 +402,14 @@ class ExcelExporter:
 
         total_iva_pagar = 0.0
         total_isr_prov = 0.0
+        total_ingresos = 0.0
+        total_ded_reales = 0.0
+        total_no_ded = 0.0
         for fi in fiscal:
             ws.cell(row=row, column=1, value=MESES[fi["mes"]])
             total_pagar = fi["iva_a_pagar"] + fi["isr_provisional"]
             values = [
+                fi["ingresos_mes"], fi["deducciones_mes"], fi["deducciones_no_deducibles"],
                 fi["iva_cobrado"], fi["iva_acreditable"], fi["iva_retenido"],
                 fi["iva_a_pagar"], fi["base_gravable"], fi["isr_provisional"],
                 total_pagar,
@@ -412,29 +417,40 @@ class ExcelExporter:
             for col_idx, val in enumerate(values):
                 cell = ws.cell(row=row, column=col_idx + 2, value=val)
                 cell.number_format = CURRENCY_FMT
+            # Resaltar no deducible en rojo si hay monto
+            if fi["deducciones_no_deducibles"] > 0:
+                ws.cell(row=row, column=4).font = FISCAL_RED
+
             total_iva_pagar += fi["iva_a_pagar"]
             total_isr_prov += fi["isr_provisional"]
+            total_ingresos += fi["ingresos_mes"]
+            total_ded_reales += fi["deducciones_mes"]
+            total_no_ded += fi["deducciones_no_deducibles"]
             row += 1
 
         # Total impuestos
         ws.cell(row=row, column=1, value="TOTAL").font = TOTAL_FONT
         for col_idx, val in [
-            (4, total_iva_pagar), (6, total_isr_prov),
-            (7, total_iva_pagar + total_isr_prov),
+            (2, total_ingresos), (3, total_ded_reales), (4, total_no_ded),
+            (8, total_iva_pagar), (10, total_isr_prov),
+            (11, total_iva_pagar + total_isr_prov),
         ]:
             cell = ws.cell(row=row, column=col_idx, value=val)
             cell.font = TOTAL_FONT
             cell.number_format = CURRENCY_FMT
-        for col in range(1, 9):
+        for col in range(1, 12):
             ws.cell(row=row, column=col).border = Border(top=Side(style="thin", color="C65911"))
         row += 1
 
         # Nota
         ws.cell(row=row + 1, column=1, value=(
-            "* IVA x Pagar = IVA cobrado - IVA acreditable - IVA retenido"
+            "* IVA x Pagar = IVA cobrado - IVA acreditable (solo de gastos deducibles) - IVA retenido"
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 2, column=1, value=(
-            "* ISR Prov. = Art.96 LISR sobre (ingresos - deducciones) - ISR retenido - pagos prov. anteriores (no incluye depreciaciones, PTU ni pérdidas ant.)"
+            "* ISR Prov. = Art.96 LISR sobre (ingresos acum. - deducciones reales acum.) - ISR retenido - pagos prov. anteriores"
+        )).font = Font(italic=True, size=9, color="888888")
+        ws.cell(row=row + 3, column=1, value=(
+            "* Ded. Reales = solo gastos clasificados como deducibles. No Deducible = consumo personal, pagos en efectivo >$2,000, etc."
         )).font = Font(italic=True, size=9, color="888888")
 
         ws.freeze_panes = "A2"
