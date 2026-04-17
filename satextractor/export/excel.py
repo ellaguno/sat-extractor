@@ -425,20 +425,26 @@ class ExcelExporter:
         ws.freeze_panes = "A2"
 
 
-    def _get_recibidas(self, fecha_inicio: date, fecha_fin: date):
-        """Obtiene facturas recibidas vigentes en un rango de fechas."""
-        return self.db.search(
-            tipo="recibida",
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            estado="Vigente",
-            limit=10000,
-        )
+    def _get_gastos_deducibles(self, fecha_inicio: date, fecha_fin: date):
+        """Obtiene facturas recibidas vigentes tipo I/E (gastos) en un rango."""
+        # Solo tipo I (Ingreso=gasto del receptor) y E (Egreso=nota de crédito)
+        # Excluye N (Nómina=ingreso), P (Pago=complemento), T (Traslado)
+        gastos = []
+        for tipo_comp in ("I", "E"):
+            gastos.extend(self.db.search(
+                tipo="recibida",
+                tipo_comprobante=tipo_comp,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                estado="Vigente",
+                limit=10000,
+            ))
+        return gastos
 
     def _write_fiscal_analysis(self, ws, fecha_inicio: date, fecha_fin: date, titulo: str):
         """Escribe la pestaña de análisis fiscal con clasificación de deducciones."""
         clasificador = ClasificadorDeducciones(self.regimen, self.db)
-        recibidas = self._get_recibidas(fecha_inicio, fecha_fin)
+        recibidas = self._get_gastos_deducibles(fecha_inicio, fecha_fin)
 
         # Título
         title_cell = ws.cell(row=1, column=1, value=f"Análisis Fiscal - {titulo}")
@@ -602,7 +608,7 @@ class ExcelExporter:
     def _write_suggestions(self, ws, fecha_inicio: date, fecha_fin: date, titulo: str):
         """Escribe la pestaña de sugerencias de optimización fiscal."""
         clasificador = ClasificadorDeducciones(self.regimen, self.db)
-        recibidas = self._get_recibidas(fecha_inicio, fecha_fin)
+        recibidas = self._get_gastos_deducibles(fecha_inicio, fecha_fin)
 
         # Título
         title_cell = ws.cell(row=1, column=1, value=f"Sugerencias de Optimización Fiscal - {titulo}")

@@ -84,6 +84,7 @@ class ClasificadorDeducciones:
         """Clasifica un concepto individual.
 
         Orden de evaluación:
+        0. Verificar tipo_comprobante (solo I y E son gastos deducibles)
         1. Cache en BD (si disponible)
         2. Catálogo SAT → categoría → reglas de deducción
         3. Categoría por defecto con alerta
@@ -93,6 +94,27 @@ class ClasificadorDeducciones:
         monto = concepto.importe
         if concepto.descuento:
             monto = monto - concepto.descuento
+
+        # 0. Verificar que el tipo de comprobante sea gasto deducible
+        tipo = comprobante.tipo_comprobante
+        if tipo not in ("I", "E"):
+            # N=Nómina (ingreso del receptor), P=Pago (complemento), T=Traslado
+            tipo_desc = {"N": "Nómina (ingreso)", "P": "Complemento de pago",
+                         "T": "Traslado de mercancías"}.get(tipo, tipo)
+            return ResultadoClasificacion(
+                concepto_descripcion=desc,
+                clave_prod_serv=clave,
+                categoria="no_deducible",
+                es_deducible=False,
+                porcentaje_deducible=0.0,
+                monto_original=monto,
+                monto_deducible=Decimal("0"),
+                fundamento_legal=f"Tipo de comprobante: {tipo_desc} - no es gasto deducible",
+                requisitos=[],
+                alertas=[f"CFDI tipo '{tipo}' ({tipo_desc}) no aplica como deducción"],
+                fuente="regla_local",
+                confianza=1.0,
+            )
 
         # 1. Buscar en cache
         cached = self._buscar_cache(clave, desc)

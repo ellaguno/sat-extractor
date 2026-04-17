@@ -765,7 +765,10 @@ class App:
                 self._fiscal_consultar_cfdi()
 
     def _fiscal_get_recibidas(self, year: int, month: int | None = None):
-        """Obtiene facturas recibidas del periodo."""
+        """Obtiene facturas recibidas tipo I/E (gastos deducibles) del periodo.
+
+        Excluye Nómina (N=ingreso), Pagos (P=complemento) y Traslados (T).
+        """
         if month:
             fecha_inicio = date(year, month, 1)
             fecha_fin = date(year, month + 1, 1) if month < 12 else date(year + 1, 1, 1)
@@ -773,12 +776,17 @@ class App:
             fecha_inicio = date(year, 1, 1)
             fecha_fin = date(year + 1, 1, 1)
 
-        return self.db.search(
-            tipo="recibida",
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-            limit=5000,
-        )
+        gastos = []
+        for tipo_comp in ("I", "E"):
+            gastos.extend(self.db.search(
+                tipo="recibida",
+                tipo_comprobante=tipo_comp,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                estado="Vigente",
+                limit=5000,
+            ))
+        return gastos
 
     def _fiscal_clasificar_periodo(self):
         console.print("\n[bold]Clasificar Deducciones[/bold]")
