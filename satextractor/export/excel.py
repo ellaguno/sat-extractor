@@ -85,12 +85,14 @@ class ExcelExporter:
             self._write_month_sheet(ws, year, month)
 
         # Pestaña de Análisis Fiscal
+        fecha_inicio_anual = date(year, 1, 1)
+        fecha_fin_anual = date(year + 1, 1, 1)
         ws_fiscal = wb.create_sheet("Análisis Fiscal")
-        self._write_fiscal_analysis(ws_fiscal, year)
+        self._write_fiscal_analysis(ws_fiscal, fecha_inicio_anual, fecha_fin_anual, str(year))
 
         # Pestaña de Sugerencias
         ws_sug = wb.create_sheet("Sugerencias")
-        self._write_suggestions(ws_sug, year)
+        self._write_suggestions(ws_sug, fecha_inicio_anual, fecha_fin_anual, str(year))
 
         wb.save(str(output_path))
         return output_path
@@ -104,8 +106,19 @@ class ExcelExporter:
         wb = Workbook()
 
         ws = wb.active
-        ws.title = f"{MESES[month]} {year}"
+        titulo_mes = f"{MESES[month]} {year}"
+        ws.title = titulo_mes
         self._write_month_sheet(ws, year, month)
+
+        # Análisis fiscal del mes
+        fecha_inicio = date(year, month, 1)
+        fecha_fin = _next_month(year, month)
+        ws_fiscal = wb.create_sheet("Análisis Fiscal")
+        self._write_fiscal_analysis(ws_fiscal, fecha_inicio, fecha_fin, titulo_mes)
+
+        # Sugerencias del mes
+        ws_sug = wb.create_sheet("Sugerencias")
+        self._write_suggestions(ws_sug, fecha_inicio, fecha_fin, titulo_mes)
 
         wb.save(str(output_path))
         return output_path
@@ -412,23 +425,23 @@ class ExcelExporter:
         ws.freeze_panes = "A2"
 
 
-    def _get_recibidas_year(self, year: int):
-        """Obtiene todas las facturas recibidas vigentes del año."""
+    def _get_recibidas(self, fecha_inicio: date, fecha_fin: date):
+        """Obtiene facturas recibidas vigentes en un rango de fechas."""
         return self.db.search(
             tipo="recibida",
-            fecha_inicio=date(year, 1, 1),
-            fecha_fin=date(year + 1, 1, 1),
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
             estado="Vigente",
             limit=10000,
         )
 
-    def _write_fiscal_analysis(self, ws, year: int):
+    def _write_fiscal_analysis(self, ws, fecha_inicio: date, fecha_fin: date, titulo: str):
         """Escribe la pestaña de análisis fiscal con clasificación de deducciones."""
         clasificador = ClasificadorDeducciones(self.regimen, self.db)
-        recibidas = self._get_recibidas_year(year)
+        recibidas = self._get_recibidas(fecha_inicio, fecha_fin)
 
         # Título
-        title_cell = ws.cell(row=1, column=1, value=f"Análisis Fiscal - {year}")
+        title_cell = ws.cell(row=1, column=1, value=f"Análisis Fiscal - {titulo}")
         title_cell.font = Font(bold=True, size=16, color="283593")
 
         if not recibidas:
@@ -586,13 +599,13 @@ class ExcelExporter:
 
         ws.freeze_panes = "A2"
 
-    def _write_suggestions(self, ws, year: int):
+    def _write_suggestions(self, ws, fecha_inicio: date, fecha_fin: date, titulo: str):
         """Escribe la pestaña de sugerencias de optimización fiscal."""
         clasificador = ClasificadorDeducciones(self.regimen, self.db)
-        recibidas = self._get_recibidas_year(year)
+        recibidas = self._get_recibidas(fecha_inicio, fecha_fin)
 
         # Título
-        title_cell = ws.cell(row=1, column=1, value=f"Sugerencias de Optimización Fiscal - {year}")
+        title_cell = ws.cell(row=1, column=1, value=f"Sugerencias de Optimización Fiscal - {titulo}")
         title_cell.font = Font(bold=True, size=16, color="283593")
 
         if not recibidas:
@@ -601,11 +614,18 @@ class ExcelExporter:
             )
             return
 
-        # Calcular ingresos anuales
+        # Calcular ingresos del periodo
         ingresos = 0.0
-        for month in range(1, 13):
-            se = self.db.monthly_summary(year, month, "emitida")
-            ingresos += se["ingresos"]
+        emitidas = self.db.search(
+            tipo="emitida",
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            estado="Vigente",
+            limit=10000,
+        )
+        for e in emitidas:
+            if e.tipo_comprobante == "I":
+                ingresos += float(e.total)
 
         sugerencias = clasificador.generar_sugerencias(recibidas, ingresos)
 
@@ -626,7 +646,7 @@ class ExcelExporter:
         row += 1
 
         stats = [
-            ("Ingresos anuales (emitidas)", ingresos),
+            ("Ingresos del periodo (emitidas)", ingresos),
             ("Total gastos (recibidas)", float(resumen["total_original"])),
             ("Total deducible", float(resumen["total_deducible"])),
             ("Total NO deducible", float(resumen["total_no_deducible"])),
