@@ -1,9 +1,5 @@
 """Entry point: python -m satextractor"""
 
-from satextractor.utils import get_path
-
-config_path = get_path("config.toml")
-
 import sys
 from pathlib import Path
 

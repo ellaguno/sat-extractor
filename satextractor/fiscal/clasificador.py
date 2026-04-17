@@ -4,6 +4,7 @@ Clasifica conceptos de CFDIs como deducibles/no deducibles según el régimen
 fiscal del contribuyente, usando reglas locales y opcionalmente IA.
 """
 
+import sys
 import tomllib
 from decimal import Decimal
 from pathlib import Path
@@ -11,7 +12,10 @@ from pathlib import Path
 from ..db.repository import Repository
 from ..models import Comprobante, Concepto, ResultadoClasificacion
 
-_FISCAL_DIR = Path(__file__).parent
+if getattr(sys, "frozen", False):
+    _FISCAL_DIR = Path(sys._MEIPASS) / "satextractor" / "fiscal"
+else:
+    _FISCAL_DIR = Path(__file__).parent
 
 # ── Carga de reglas ──────────────────────────────────────────────────────────
 
