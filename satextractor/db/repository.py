@@ -143,7 +143,7 @@ class Repository:
         fecha_inicio: date | None = None,
         fecha_fin: date | None = None,
     ) -> int:
-        conditions = []
+        conditions = ["estado = 'Vigente'"]
         params: list = []
         if tipo:
             conditions.append("tipo = ?")
@@ -154,7 +154,7 @@ class Repository:
         if fecha_fin:
             conditions.append("fecha < ?")
             params.append(fecha_fin.isoformat())
-        where = " AND ".join(conditions) if conditions else "1=1"
+        where = " AND ".join(conditions)
         row = self.conn.execute(
             f"SELECT COUNT(*) FROM comprobantes WHERE {where}", params
         ).fetchone()
@@ -167,7 +167,7 @@ class Repository:
         else:
             fecha_fin = f"{year:04d}-{month + 1:02d}-01"
 
-        conditions = ["fecha >= ? AND fecha < ?"]
+        conditions = ["fecha >= ? AND fecha < ?", "estado = 'Vigente'"]
         params: list = [fecha_inicio, fecha_fin]
         if tipo:
             conditions.append("tipo = ?")

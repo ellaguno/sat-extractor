@@ -215,17 +215,30 @@ class ExcelExporter:
                 ws.cell(row=row, column=17, value=c.forma_pago or "")
                 ws.cell(row=row, column=18, value=c.estado)
 
-                total_subtotal += subtotal
-                total_descuento += descuento
-                total_total += total
-                total_iva_trasl += iva_t
-                total_isr_ret += isr_r
-                total_iva_ret += iva_r
+                cancelado = c.estado != "Vigente"
+                if cancelado:
+                    # Marcar fila completa con texto tachado y gris
+                    cancel_font = Font(strikethrough=True, color="999999")
+                    for col in range(1, 19):
+                        ws.cell(row=row, column=col).font = cancel_font
+                else:
+                    total_subtotal += subtotal
+                    total_descuento += descuento
+                    total_total += total
+                    total_iva_trasl += iva_t
+                    total_isr_ret += isr_r
+                    total_iva_ret += iva_r
 
                 row += 1
 
             # Fila de totales
-            ws.cell(row=row, column=7, value=f"TOTAL ({len(cfdis)} CFDIs)").font = TOTAL_FONT
+            vigentes = sum(1 for c in cfdis if c.estado == "Vigente")
+            cancelados = len(cfdis) - vigentes
+            label = f"TOTAL ({vigentes} CFDIs"
+            if cancelados:
+                label += f", {cancelados} cancelado{'s' if cancelados > 1 else ''}"
+            label += ")"
+            ws.cell(row=row, column=7, value=label).font = TOTAL_FONT
             for col, val in [
                 (9, total_subtotal), (10, total_descuento), (11, total_total),
                 (12, total_iva_trasl), (13, total_isr_ret), (14, total_iva_ret),
@@ -400,11 +413,12 @@ class ExcelExporter:
 
 
     def _get_recibidas_year(self, year: int):
-        """Obtiene todas las facturas recibidas del año."""
+        """Obtiene todas las facturas recibidas vigentes del año."""
         return self.db.search(
             tipo="recibida",
             fecha_inicio=date(year, 1, 1),
             fecha_fin=date(year + 1, 1, 1),
+            estado="Vigente",
             limit=10000,
         )
 
