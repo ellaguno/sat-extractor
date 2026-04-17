@@ -116,18 +116,18 @@ class ClasificadorDeducciones:
                 categoria_id, categoria_data, concepto, comprobante, monto
             )
         else:
-            # 3. No clasificado - marcar para revisión
+            # 2. No clasificado - NO asumir deducible
             resultado = ResultadoClasificacion(
                 concepto_descripcion=desc,
                 clave_prod_serv=clave,
                 categoria="no_clasificado",
-                es_deducible=True,  # Asumir deducible por defecto (gasto de operación)
-                porcentaje_deducible=100.0,
+                es_deducible=False,
+                porcentaje_deducible=0.0,
                 monto_original=monto,
-                monto_deducible=monto,
-                fundamento_legal="Art. 103 Fracc. III LISR (pendiente clasificar)",
-                requisitos=["Verificar que sea estrictamente indispensable"],
-                alertas=["Gasto no clasificado automáticamente - revisar manualmente"],
+                monto_deducible=Decimal("0"),
+                fundamento_legal="Sin clasificar - verificar manualmente",
+                requisitos=["Determinar si es gasto de negocio o consumo personal"],
+                alertas=["Gasto no clasificado - no se asume deducible"],
                 fuente="regla_local",
                 confianza=0.3,
             )

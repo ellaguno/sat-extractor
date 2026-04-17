@@ -262,8 +262,8 @@ prefijos = ["9212"]
 
 # ── Materiales e insumos de operación ────────────────────────────────────────
 [categorias.materiales_insumos]
-descripcion = "Materias primas, materiales e insumos de operación"
-deduccion = "gastos_operacion"
+descripcion = "Materias primas, materiales e insumos industriales"
+deduccion = "consumo_posible_negocio"
 claves = []
 prefijos = [
     "10", "11", "12", "13", "14",  # Plantas, minerales, químicos, resinas, papel
@@ -311,22 +311,53 @@ prefijos = [
     "49",  # Equipo deportivo/recreativo
 ]
 
-# ── Productos de consumo general ─────────────────────────────────────────────
-[categorias.productos_consumo]
-descripcion = "Alimentos, fármacos, productos de uso general"
-deduccion = "gastos_operacion"
+# ── Consumo personal (NO deducible por defecto) ─────────────────────────────
+# Art. 28 Fracc. I LISR: gastos que no son estrictamente indispensables
+# para la actividad empresarial NO son deducibles.
+[categorias.alimentos_super]
+descripcion = "Alimentos y bebidas de supermercado (consumo personal)"
+deduccion = "consumo_personal"
 claves = []
-prefijos = [
-    "50",  # Alimentos y bebidas (no restaurante)
-    "51",  # Fármacos y productos medicinales
-    "52",  # Electrodomésticos
-    "53",  # Ropa y textiles
-    "54",  # Relojería y joyería
-    "55",  # Libros y publicaciones
-    "60",  # Instrumentos musicales
-]
+prefijos = ["50"]  # Alimentos, bebidas - compras de súper NO son deducibles
 
-# ── Servicios generales ─────────────────────────────────────────────────────
+[categorias.ropa_textiles]
+descripcion = "Ropa, textiles y calzado (consumo personal)"
+deduccion = "consumo_personal"
+claves = []
+prefijos = ["53"]  # Ropa personal no es deducible (salvo uniformes)
+
+[categorias.joyeria_personal]
+descripcion = "Relojería, joyería y accesorios personales"
+deduccion = "consumo_personal"
+claves = []
+prefijos = ["54"]
+
+[categorias.electrodomesticos]
+descripcion = "Electrodomésticos y aparatos del hogar"
+deduccion = "consumo_personal"
+claves = []
+prefijos = ["52"]  # Lavadoras, refrigeradores, etc. = personal
+
+# ── Consumo que podría ser de negocio (verificar) ───────────────────────────
+[categorias.farmaceuticos]
+descripcion = "Fármacos y productos medicinales"
+deduccion_personal = "honorarios_medicos"
+claves = []
+prefijos = ["51"]  # Podría ser deducción personal si es con receta
+
+[categorias.libros_publicaciones]
+descripcion = "Libros y publicaciones"
+deduccion = "consumo_posible_negocio"
+claves = []
+prefijos = ["55"]  # Podrían ser para capacitación/negocio
+
+[categorias.instrumentos_musicales]
+descripcion = "Instrumentos musicales y accesorios"
+deduccion = "consumo_personal"
+claves = []
+prefijos = ["60"]  # Personal salvo que la actividad sea musical
+
+# ── Servicios generales (negocio) ────────────────────────────────────────────
 [categorias.servicios_generales]
 descripcion = "Servicios industriales, de limpieza, ambientales y otros"
 deduccion = "gastos_operacion"
@@ -338,10 +369,16 @@ prefijos = [
     "76",  # Servicios de limpieza industrial
     "77",  # Servicios ambientales
     "82",  # Servicios editoriales y de diseño
-    "91",  # Servicios de cuidado personal
-    "93",  # Administración pública
+    "93",  # Administración pública (trámites)
     "94",  # Servicios comunitarios y sociales
 ]
+
+# ── Servicios personales (no deducibles) ─────────────────────────────────────
+[categorias.cuidado_personal]
+descripcion = "Servicios de cuidado personal (estética, spa, etc.)"
+deduccion = "consumo_personal"
+claves = []
+prefijos = ["91"]  # Peluquería, spa, gimnasio = consumo personal
 
 # ── Cobertura residual de segmentos con reglas específicas parciales ──────────
 # Estos segmentos ya tienen reglas más específicas (4-6 dígitos) para subcategorías
@@ -448,5 +485,5 @@ prefijos = ["95"]
 # ── Categoría por defecto ─────────────────────────────────────────────────────
 [categorias._default]
 descripcion = "Gasto no clasificado automáticamente"
-deduccion = "gastos_operacion"
+deduccion = "consumo_posible_negocio"
 nota = "Requiere revisión manual o consulta a IA para determinar deducibilidad"

@@ -167,6 +167,25 @@ porcentaje = 100
 fundamento = "Art. 103 Fracc. III LISR"
 requisitos = ["CFDI válido", "Relacionado con la actividad empresarial"]
 
+# ── Gastos probablemente personales (NO deducibles por defecto) ─────────────
+# Art. 28 Fracc. I LISR: "No serán deducibles [...] los gastos [...] que no
+# sean estrictamente indispensables para los fines de la actividad del
+# contribuyente." Estos rubros son típicamente consumo personal.
+
+[regimenes."612".deducciones.consumo_personal]
+nombre = "Consumo personal (no deducible)"
+porcentaje = 0
+fundamento = "Art. 28 Fracc. I LISR"
+requisitos = ["Demostrar que es estrictamente indispensable para la actividad"]
+nota = "Alimentos de super, ropa, articulos personales, etc. no son deducibles salvo que se demuestre uso empresarial"
+
+[regimenes."612".deducciones.consumo_posible_negocio]
+nombre = "Posible gasto de negocio (verificar)"
+porcentaje = 100
+fundamento = "Art. 103 Fracc. III LISR"
+requisitos = ["CFDI valido", "Verificar que sea estrictamente indispensable para la actividad"]
+nota = "Podria ser gasto de negocio o personal - requiere verificacion"
+
 # ── Deducciones personales (Art. 151 LISR) ───────────────────────────────────
 # Aplican a TODAS las personas físicas en su declaración anual
 # Límite global: 15% del ingreso anual o 5 UMA anuales (lo que sea menor)
