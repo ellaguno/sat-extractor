@@ -11,6 +11,7 @@ from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
+    Button,
     DataTable,
     Footer,
     Header,
@@ -18,6 +19,7 @@ from textual.widgets import (
     Label,
     LoadingIndicator,
     OptionList,
+    Select,
     Static,
     TabbedContent,
     TabPane,
@@ -26,7 +28,7 @@ from textual.widgets import (
 from ..db.connection import get_connection
 from ..db.repository import Repository
 from ..export.excel import ExcelExporter, MESES
-from ..fiscal import calcular_impuestos_mensuales
+from ..fiscal import calcular_impuestos_mensuales, isr_label
 from ..fiscal.clasificador import ClasificadorDeducciones
 from ..models import TIPO_COMPROBANTE
 
@@ -90,7 +92,7 @@ class DashboardScreen(BackScreen):
         regimen = "612"
         if self.config and self.config.contribuyente:
             regimen = self.config.contribuyente.regimen
-        fiscal = calcular_impuestos_mensuales(self.db, self.year, regimen)
+        fiscal = calcular_impuestos_mensuales(self.db, self.year, regimen, config=self.config)
 
         table = self.query_one("#dash-table", DataTable)
         table.cursor_type = "row"
@@ -146,12 +148,22 @@ class DashboardScreen(BackScreen):
         )
 
         notes = self.query_one("#dash-notes", Static)
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
         notes.update(
             "* IVA x Pagar = IVA cobrado - IVA acreditable - IVA retenido\n"
-            "* ISR Prov. = Art.96 LISR sobre (ingresos - deducciones) "
-            "- ISR retenido - pagos prev.\n"
-            "* No incluye depreciaciones ni pérdidas de ejercicios anteriores"
+            f"* {isr_label(regimen)}\n"
+            "* No incluye depreciaciones ni pérdidas de ejercicios anteriores\n"
+            "[dim]Selecciona un mes para ver el detalle[/dim]"
         )
+
+    @on(DataTable.RowSelected, "#dash-table")
+    def on_row_selected(self, event: DataTable.RowSelected) -> None:
+        row_index = event.cursor_row
+        if 0 <= row_index <= 11:  # Meses 1-12, ignorar fila TOTAL
+            month = row_index + 1
+            self.app.push_screen(MonthDetailScreen(self.db, self.year, month))
 
 
 class MonthDetailScreen(BackScreen):
@@ -162,6 +174,8 @@ class MonthDetailScreen(BackScreen):
         self.db = db
         self.year = year
         self.month = month
+        self._uuids_emitidas: list[str] = []
+        self._uuids_recibidas: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -191,19 +205,22 @@ class MonthDetailScreen(BackScreen):
         summary = self.query_one("#month-summary", Static)
         summary.update(
             f"Emitidas: {se['num_cfdis']} CFDIs  {_fmt(se['total'])}    "
-            f"Recibidas: {sr['num_cfdis']} CFDIs  {_fmt(sr['total'])}"
+            f"Recibidas: {sr['num_cfdis']} CFDIs  {_fmt(sr['total'])}\n"
+            "[dim]Selecciona un CFDI para ver su detalle[/dim]"
         )
 
         # Emitidas
         emitidas = self.db.search(
             tipo="emitida", fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, limit=500,
         )
+        self._uuids_emitidas = [c.uuid for c in emitidas]
         self._fill_cfdi_table("#month-emitidas", emitidas, "Emitidas")
 
         # Recibidas
         recibidas = self.db.search(
             tipo="recibida", fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, limit=500,
         )
+        self._uuids_recibidas = [c.uuid for c in recibidas]
         self._fill_cfdi_table("#month-recibidas", recibidas, "Recibidas")
 
     def _fill_cfdi_table(self, table_id: str, cfdis: list, label: str) -> None:
@@ -248,6 +265,18 @@ class MonthDetailScreen(BackScreen):
             "", "", "", f"{len(cfdis)} CFDIs",
             _fmt(total_monto), "", "",
         )
+
+    @on(DataTable.RowSelected, "#month-emitidas")
+    def on_emitida_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._uuids_emitidas):
+            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids_emitidas[idx]))
+
+    @on(DataTable.RowSelected, "#month-recibidas")
+    def on_recibida_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._uuids_recibidas):
+            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids_recibidas[idx]))
 
 
 class CfdiDetailScreen(BackScreen):
@@ -330,6 +359,7 @@ class SearchScreen(BackScreen):
     def __init__(self, db: Repository):
         super().__init__()
         self.db = db
+        self._uuids: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -370,16 +400,19 @@ class SearchScreen(BackScreen):
         status = self.query_one("#search-status", Static)
         table = self.query_one("#search-results", DataTable)
         table.clear(columns=True)
+        self._uuids = []
 
         if not results:
             status.update("[yellow]No se encontraron resultados.[/yellow]")
             return
 
         status.update(f"[green]{len(results)} resultado(s)[/green]")
+        table.cursor_type = "row"
 
         for col in ["#", "Fecha", "Tipo", "Contraparte", "Concepto", "Total", "UUID"]:
             table.add_column(col, key=col)
 
+        self._uuids = [c.uuid for c in results]
         for i, c in enumerate(results, 1):
             contraparte = (
                 c.nombre_receptor or c.rfc_receptor
@@ -399,6 +432,12 @@ class SearchScreen(BackScreen):
                 _fmt(monto),
                 c.uuid[:8],
             )
+
+    @on(DataTable.RowSelected, "#search-results")
+    def on_result_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._uuids):
+            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids[idx]))
 
 
 class TopEntitiesScreen(BackScreen):
@@ -478,6 +517,7 @@ class FiscalClasificacionScreen(BackScreen):
         self.config = config
         self.year = year
         self.month = month
+        self._uuids: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -571,6 +611,7 @@ class FiscalClasificacionScreen(BackScreen):
                     f"{clas.porcentaje_deducible:.0f}%",
                     indicator,
                 )
+                self._uuids.append(comp.uuid)
                 if i >= 200:
                     break
             if i >= 200:
@@ -587,6 +628,12 @@ class FiscalClasificacionScreen(BackScreen):
             f"{i} conceptos analizados\n"
             "V=deducible  !=alertas  X=no deducible"
         )
+
+    @on(DataTable.RowSelected, "#fiscal-table")
+    def on_fiscal_row_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._uuids):
+            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids[idx]))
 
 
 class FiscalCategoriasScreen(BackScreen):
@@ -726,7 +773,7 @@ class FiscalImpuestosScreen(BackScreen):
         regimen = "612"
         if self.config and self.config.contribuyente:
             regimen = self.config.contribuyente.regimen
-        fiscal = calcular_impuestos_mensuales(self.db, self.year, regimen)
+        fiscal = calcular_impuestos_mensuales(self.db, self.year, regimen, config=self.config)
 
         table = self.query_one("#imp-table", DataTable)
         table.cursor_type = "row"
@@ -886,6 +933,8 @@ class FiscalSugerenciasScreen(BackScreen):
                         if self.config.contribuyente else ""
                     ),
                     model=self.config.ia.model,
+                    provider=self.config.ia.provider,
+                    base_url=self.config.ia.base_url,
                 )
                 resumen = clasificador.resumen_periodo(recibidas)
                 ia_sugerencias = asistente.generar_sugerencias(resumen, ingresos)
@@ -1145,6 +1194,275 @@ class DirInputScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+# ── Pantalla de Configuración ────────────────────────────────────────────
+
+
+def _regimenes_disponibles() -> list[tuple[str, str]]:
+    """Carga regímenes disponibles desde el TOML de reglas fiscales."""
+    try:
+        from ..fiscal.clasificador import _cargar_reglas
+        reglas = _cargar_reglas()
+        result = []
+        for code, data in reglas.get("regimenes", {}).items():
+            nombre = data.get("nombre", code)
+            result.append((code, f"{code} — {nombre}"))
+        result.sort(key=lambda x: x[0])
+        return result
+    except Exception:
+        return [
+            ("601", "601 — General de Ley Personas Morales"),
+            ("603", "603 — PM con Fines no Lucrativos"),
+            ("612", "612 — PFAE"),
+            ("625", "625 — Plataformas Tecnológicas"),
+            ("626", "626 — RESICO"),
+        ]
+
+
+_ACTIVIDADES_PLATAFORMA = [
+    ("transporte", "Transporte (Uber, Didi, etc.)"),
+    ("alimentos", "Entrega de alimentos (Rappi, UberEats, etc.)"),
+    ("hospedaje", "Hospedaje (Airbnb, Booking, etc.)"),
+    ("venta_bienes", "Venta de bienes (MercadoLibre, Amazon, etc.)"),
+    ("otros", "Otros servicios"),
+]
+
+
+class ConfigScreen(Screen):
+    """Pantalla para editar la configuración de la aplicación."""
+
+    BINDINGS = [
+        Binding("escape", "go_back", "Volver"),
+    ]
+
+    CSS = """
+    #config-container {
+        padding: 1 2;
+    }
+    .config-field {
+        margin-bottom: 1;
+    }
+    .config-label {
+        color: $text-muted;
+        margin-bottom: 0;
+    }
+    #btn-guardar {
+        margin-top: 1;
+        width: 30;
+    }
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+    def compose(self) -> ComposeResult:
+        cfg = self.config
+
+        regimenes = _regimenes_disponibles()
+        reg_options = [(label, code) for code, label in regimenes]
+        reg_default = cfg.contribuyente.regimen if cfg.contribuyente else "612"
+
+        act_plat_options = [(label, code) for code, label in _ACTIVIDADES_PLATAFORMA]
+        act_plat_default = (
+            cfg.contribuyente.actividad_plataforma
+            if cfg.contribuyente and cfg.contribuyente.actividad_plataforma
+            else "otros"
+        )
+
+        yield Header()
+        with VerticalScroll(id="config-container"):
+            yield Static("[bold]Configuración[/bold]\n")
+
+            with TabbedContent():
+                with TabPane("Contribuyente", id="tab-contrib"):
+                    yield Static("Régimen fiscal:", classes="config-label")
+                    yield Select(
+                        reg_options,
+                        value=reg_default,
+                        id="cfg-regimen",
+                        allow_blank=False,
+                    )
+                    yield Static("Actividad económica:", classes="config-label")
+                    yield Input(
+                        value=cfg.contribuyente.actividad if cfg.contribuyente else "",
+                        placeholder="Ej: Desarrollo de software",
+                        id="cfg-actividad",
+                    )
+                    yield Static("Coeficiente de utilidad (solo PM 601):", classes="config-label")
+                    yield Input(
+                        value=str(cfg.contribuyente.coeficiente_utilidad) if cfg.contribuyente and cfg.contribuyente.coeficiente_utilidad else "",
+                        placeholder="Ej: 0.35",
+                        id="cfg-coeficiente",
+                    )
+                    yield Static("Actividad plataforma (solo 625):", classes="config-label")
+                    yield Select(
+                        act_plat_options,
+                        value=act_plat_default,
+                        id="cfg-act-plataforma",
+                        allow_blank=False,
+                    )
+
+                with TabPane("SAT / FIEL", id="tab-fiel"):
+                    yield Static("RFC:", classes="config-label")
+                    yield Input(
+                        value=cfg.sat.rfc if cfg.sat else "",
+                        placeholder="Ej: XAXX010101000",
+                        id="cfg-rfc",
+                    )
+                    yield Static("Ruta certificado (.cer):", classes="config-label")
+                    yield Input(
+                        value=str(cfg.fiel.cer_path) if cfg.fiel and str(cfg.fiel.cer_path) else "",
+                        placeholder="/ruta/a/certificado.cer",
+                        id="cfg-cer",
+                    )
+                    yield Static("Ruta llave privada (.key):", classes="config-label")
+                    yield Input(
+                        value=str(cfg.fiel.key_path) if cfg.fiel and str(cfg.fiel.key_path) else "",
+                        placeholder="/ruta/a/llave.key",
+                        id="cfg-key",
+                    )
+                    yield Static("Contraseña FIEL:", classes="config-label")
+                    yield Input(
+                        value=cfg.fiel.password or "" if cfg.fiel else "",
+                        placeholder="Contraseña de la llave privada",
+                        password=True,
+                        id="cfg-password",
+                    )
+
+                with TabPane("Directorios", id="tab-dirs"):
+                    yield Static("Base de datos:", classes="config-label")
+                    yield Input(
+                        value=str(cfg.database.path) if cfg.database else "~/satextractor.db",
+                        placeholder="~/satextractor.db",
+                        id="cfg-db-path",
+                    )
+                    yield Static("Directorio exportación Excel:", classes="config-label")
+                    yield Input(
+                        value=str(cfg.export.output_dir) if cfg.export else "~/reportes_sat",
+                        placeholder="~/reportes_sat",
+                        id="cfg-export-dir",
+                    )
+
+                with TabPane("IA (opcional)", id="tab-ia"):
+                    yield Static("Proveedor:", classes="config-label")
+                    yield Select(
+                        [
+                            ("Anthropic (Claude)", "anthropic"),
+                            ("DeepSeek", "deepseek"),
+                            ("OpenRouter (multi-modelo)", "openrouter"),
+                        ],
+                        value=cfg.ia.provider if cfg.ia else "anthropic",
+                        id="cfg-provider",
+                        allow_blank=False,
+                    )
+                    yield Static("API Key:", classes="config-label")
+                    yield Input(
+                        value=cfg.ia.api_key if cfg.ia else "",
+                        placeholder="sk-ant-... / sk-or-... / sk-...",
+                        password=True,
+                        id="cfg-api-key",
+                    )
+                    yield Static("Modelo:", classes="config-label")
+                    yield Input(
+                        value=cfg.ia.model if cfg.ia else "claude-sonnet-4-6",
+                        placeholder="claude-sonnet-4-6 / deepseek-chat / anthropic/claude-sonnet-4-6",
+                        id="cfg-model",
+                    )
+                    yield Static("URL base (solo OpenRouter/custom):", classes="config-label")
+                    yield Input(
+                        value=cfg.ia.base_url if cfg.ia else "",
+                        placeholder="https://openrouter.ai/api/v1",
+                        id="cfg-base-url",
+                    )
+                    yield Static("Días de caché clasificaciones:", classes="config-label")
+                    yield Input(
+                        value=str(cfg.ia.cache_dias) if cfg.ia else "90",
+                        placeholder="90",
+                        id="cfg-cache-dias",
+                        type="integer",
+                    )
+
+            yield Button("Guardar configuración", id="btn-guardar", variant="success")
+
+        yield Footer()
+
+    @on(Button.Pressed, "#btn-guardar")
+    def on_save(self, event: Button.Pressed) -> None:
+        """Guarda la configuración editada."""
+        from ..config import (
+            Config, FielConfig, SATConfig, DatabaseConfig,
+            ExportConfig, ContribuyenteConfig, IAConfig,
+        )
+
+        try:
+            regimen = self.query_one("#cfg-regimen", Select).value
+            if regimen is Select.BLANK:
+                regimen = "612"
+
+            act_plat = self.query_one("#cfg-act-plataforma", Select).value
+            if act_plat is Select.BLANK:
+                act_plat = "otros"
+
+            coef_str = self.query_one("#cfg-coeficiente", Input).value.strip()
+            coeficiente = float(coef_str) if coef_str else 0.0
+
+            cer_path_str = self.query_one("#cfg-cer", Input).value.strip()
+            key_path_str = self.query_one("#cfg-key", Input).value.strip()
+
+            new_config = Config(
+                fiel=FielConfig(
+                    cer_path=Path(cer_path_str).expanduser() if cer_path_str else Path(""),
+                    key_path=Path(key_path_str).expanduser() if key_path_str else Path(""),
+                    password=self.query_one("#cfg-password", Input).value or None,
+                ),
+                sat=SATConfig(
+                    rfc=self.query_one("#cfg-rfc", Input).value.strip().upper(),
+                ),
+                database=DatabaseConfig(
+                    path=Path(self.query_one("#cfg-db-path", Input).value.strip() or "~/satextractor.db").expanduser(),
+                ),
+                export=ExportConfig(
+                    output_dir=Path(self.query_one("#cfg-export-dir", Input).value.strip() or "~/reportes_sat").expanduser(),
+                ),
+                contribuyente=ContribuyenteConfig(
+                    regimen=str(regimen),
+                    actividad=self.query_one("#cfg-actividad", Input).value.strip(),
+                    coeficiente_utilidad=coeficiente,
+                    actividad_plataforma=str(act_plat),
+                ),
+                ia=IAConfig(
+                    provider=str(self.query_one("#cfg-provider", Select).value or "anthropic"),
+                    api_key=self.query_one("#cfg-api-key", Input).value.strip(),
+                    model=self.query_one("#cfg-model", Input).value.strip() or "claude-sonnet-4-6",
+                    base_url=self.query_one("#cfg-base-url", Input).value.strip(),
+                    cache_dias=int(self.query_one("#cfg-cache-dias", Input).value or 90),
+                ),
+                _config_path=self.config._config_path,
+            )
+
+            saved_path = new_config.save()
+
+            # Actualizar config en vivo en la app
+            self.app.config = new_config
+
+            # Recrear exporter con nuevo régimen
+            new_regimen = new_config.contribuyente.regimen
+            self.app.exporter = ExcelExporter(
+                self.app.db, regimen=new_regimen, config=new_config,
+            )
+
+            self.notify(
+                f"Configuración guardada en {saved_path}",
+                title="Guardado",
+                timeout=6,
+            )
+        except Exception as e:
+            self.notify(f"Error: {e}", title="Error", severity="error", timeout=8)
+
+    def action_go_back(self) -> None:
+        self.app.pop_screen()
+
+
 # ── App Principal ────────────────────────────────────────────────────────
 
 
@@ -1218,6 +1536,7 @@ class SATExtractorApp(App):
         Binding("t", "top", "Top"),
         Binding("e", "export", "Excel"),
         Binding("f", "fiscal", "Fiscal"),
+        Binding("c", "config", "Config"),
     ]
 
     def __init__(self, db_path: Path, config=None):
@@ -1228,7 +1547,7 @@ class SATExtractorApp(App):
         regimen = "612"
         if config and config.contribuyente:
             regimen = config.contribuyente.regimen
-        self.exporter = ExcelExporter(self.db, regimen=regimen)
+        self.exporter = ExcelExporter(self.db, regimen=regimen, config=config)
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -1244,6 +1563,7 @@ class SATExtractorApp(App):
                 "  ────────────────────────────────",
                 "  [1] Descargar CFDIs del SAT",
                 "  [2] Importar XMLs desde directorio",
+                "  [c] Configuración",
                 "  ────────────────────────────────",
                 "  [q] Salir",
                 id="main-options",
@@ -1280,7 +1600,8 @@ class SATExtractorApp(App):
             5: self.action_fiscal,
             7: self.action_do_download,
             8: self.action_do_import,
-            10: self.action_quit,
+            9: self.action_config,
+            11: self.action_quit,
         }
         action = actions.get(idx)
         if action:
@@ -1328,6 +1649,8 @@ class SATExtractorApp(App):
 
     @work(thread=True)
     def _do_export(self, year: int, month: int | None) -> None:
+        import subprocess
+
         output_dir = Path("~/reportes_sat").expanduser()
         if self.config:
             output_dir = self.config.export.output_dir
@@ -1337,12 +1660,32 @@ class SATExtractorApp(App):
                 path = self.exporter.monthly_report(year, month, output_dir)
             else:
                 path = self.exporter.annual_report(year, output_dir)
-            self.notify(f"Reporte guardado: {path}", title="Excel")
+            self.notify(f"Reporte guardado: {path}", title="Excel", timeout=8)
+            # Abrir con la aplicación por defecto del sistema
+            try:
+                subprocess.Popen(
+                    ["xdg-open", str(path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except FileNotFoundError:
+                pass  # xdg-open no disponible
         except Exception as e:
             self.notify(f"Error: {e}", title="Error", severity="error")
 
     def action_fiscal(self) -> None:
         self.push_screen(FiscalMenuScreen(self.db, self.config))
+
+    def action_config(self) -> None:
+        self.push_screen(ConfigScreen(self.config))
+
+    def _set_status(self, text: str) -> None:
+        """Actualiza la barra de estado desde cualquier hilo."""
+        try:
+            bar = self.query_one("#status-bar", Static)
+            bar.update(text)
+        except Exception:
+            pass
 
     def action_do_download(self) -> None:
         if not self.config:
@@ -1352,7 +1695,22 @@ class SATExtractorApp(App):
                 severity="error",
             )
             return
-        # Descarga SAT — simplificada, pide año+mes
+        # Validar que exista configuración de FIEL
+        if not getattr(self.config, "fiel", None):
+            self.notify(
+                "Falta sección [fiel] en config.toml",
+                title="Error",
+                severity="error",
+            )
+            return
+        if not self.config.fiel.password:
+            self.notify(
+                "Falta password de FIEL en config.toml (requerido en TUI)",
+                title="Error",
+                severity="error",
+            )
+            return
+
         def on_period(result: tuple | None) -> None:
             if result:
                 year, month = result
@@ -1368,6 +1726,10 @@ class SATExtractorApp(App):
             from ..auth.fiel import load_fiel_interactive
             from ..download.service import SATDownloader
             from ..download.package import extract_and_process
+
+            periodo = f"{year}/{month:02d}" if month else f"{year} completo"
+            self.call_from_thread(self._set_status, f"Descargando CFDIs {periodo}...")
+            self.notify(f"Iniciando descarga {periodo}...", title="SAT")
 
             fiel = load_fiel_interactive(
                 self.config.fiel.cer_path,
@@ -1390,15 +1752,26 @@ class SATExtractorApp(App):
 
             total_new = 0
             for tipo in ("recibida", "emitida"):
+                self.call_from_thread(
+                    self._set_status, f"Descargando {tipo}s {periodo}..."
+                )
                 zips = downloader.download_range(start, end, tipo, db=self.db)
                 for zip_path in zips:
                     n = extract_and_process(zip_path, self.db, tipo)
                     total_new += n
 
-            self.notify(f"{total_new} CFDIs importados", title="Descarga SAT")
+            self.call_from_thread(self._set_status, "")
+            self.notify(
+                f"{total_new} CFDIs importados", title="Descarga SAT",
+                timeout=8,
+            )
             self.call_from_thread(self._refresh_stats)
         except Exception as e:
-            self.notify(f"Error: {e}", title="Error", severity="error")
+            self.call_from_thread(self._set_status, "")
+            self.notify(
+                f"Error: {e}", title="Error descarga", severity="error",
+                timeout=10,
+            )
 
     def action_do_import(self) -> None:
         def on_dir(dir_path: str | None) -> None:
@@ -1462,7 +1835,7 @@ class FiscalMenuScreen(BackScreen):
         yield Vertical(
             Static(
                 f"[bold magenta]Análisis Fiscal Inteligente[/bold magenta]\n"
-                f"Régimen: {regimen}"
+                f"Régimen: {regimen} — {isr_label(regimen)}"
             ),
             OptionList(
                 "  [1] Clasificar deducciones del periodo",

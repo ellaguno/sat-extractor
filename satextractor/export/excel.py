@@ -8,7 +8,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from ..db.repository import Repository
-from ..fiscal import calcular_impuestos_mensuales
+from ..fiscal import calcular_impuestos_mensuales, isr_label
 from ..fiscal.clasificador import ClasificadorDeducciones
 from ..models import TIPO_COMPROBANTE
 
@@ -62,9 +62,10 @@ SUGERENCIA_FONT = Font(bold=True, size=12, color="283593")
 
 
 class ExcelExporter:
-    def __init__(self, db: Repository, regimen: str = "612"):
+    def __init__(self, db: Repository, regimen: str = "612", config=None):
         self.db = db
         self.regimen = regimen
+        self.config = config
 
     def annual_report(self, year: int, output_dir: Path) -> Path:
         """Genera reporte anual: pestaña resumen + una pestaña por mes."""
@@ -378,7 +379,7 @@ class ExcelExporter:
         row += 2
 
         # === SECCIÓN IMPUESTOS PROVISIONALES ===
-        fiscal = calcular_impuestos_mensuales(self.db, year, self.regimen)
+        fiscal = calcular_impuestos_mensuales(self.db, year, self.regimen, config=self.config)
 
         FISCAL_FILL = PatternFill(start_color="C65911", end_color="C65911", fill_type="solid")
         FISCAL_SECTION_FILL = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
@@ -451,7 +452,7 @@ class ExcelExporter:
             "* IVA x Pagar = IVA cobrado - IVA acreditable (solo de gastos deducibles) - IVA retenido"
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 2, column=1, value=(
-            "* ISR Prov. = Art.96 LISR sobre (ingresos acum. - deducciones reales acum.) - ISR retenido - pagos prov. anteriores"
+            f"* ISR Prov. = {isr_label(self.regimen)}"
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 3, column=1, value=(
             "* Ded. Reales = solo gastos clasificados como deducibles. No Deducible = consumo personal, pagos en efectivo >$2,000, etc."
@@ -462,7 +463,7 @@ class ExcelExporter:
 
     def _write_monthly_taxes(self, ws, year: int, month: int):
         """Escribe pestaña de impuestos provisionales para un mes específico."""
-        fiscal = calcular_impuestos_mensuales(self.db, year, self.regimen)
+        fiscal = calcular_impuestos_mensuales(self.db, year, self.regimen, config=self.config)
         fi = fiscal[month - 1]
 
         titulo_mes = f"{MESES[month]} {year}"
@@ -532,7 +533,7 @@ class ExcelExporter:
             ("Deducciones acumuladas ene-" + MESES[month][:3].lower(), fi["deducciones_acum"], "Solo deducibles"),
             ("Base gravable acumulada", fi["base_gravable"], "Ingresos acum. - Deducciones acum."),
             None,
-            ("ISR según tarifa Art. 96 LISR", fi["isr_tarifa"], "Tarifa aplicada al periodo acumulado"),
+            (isr_label(self.regimen), fi["isr_tarifa"], "Tarifa aplicada al periodo"),
             ("(-) ISR retenido acumulado", fi["isr_retenido_acum"], "Retenciones de clientes ene-" + MESES[month][:3].lower()),
             ("(-) Pagos provisionales anteriores", fi["pagos_prov_anteriores"], "ISR pagado en meses anteriores"),
             None,
@@ -646,7 +647,7 @@ class ExcelExporter:
         # Notas
         notas = [
             "* IVA a Pagar = IVA cobrado - IVA acreditable (solo de gastos deducibles) - IVA retenido",
-            "* ISR Prov. = Tarifa Art. 96 LISR sobre base gravable acumulada - ISR retenido acum. - pagos prov. anteriores",
+            f"* ISR Prov. = {isr_label(self.regimen)}",
             "* Ded. Reales = solo gastos clasificados como deducibles. No incluye depreciaciones ni pérdidas anteriores",
             "* Estimado educativo - no sustituye asesoría fiscal profesional",
         ]

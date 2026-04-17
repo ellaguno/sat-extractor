@@ -32,7 +32,20 @@ class App:
         regimen = "612"
         if config and config.contribuyente:
             regimen = config.contribuyente.regimen
-        self.exporter = ExcelExporter(self.db, regimen=regimen)
+        self.exporter = ExcelExporter(self.db, regimen=regimen, config=config)
+
+    @staticmethod
+    def _open_file(path: Path) -> None:
+        """Abre un archivo con la aplicación por defecto del sistema."""
+        import subprocess
+        try:
+            subprocess.Popen(
+                ["xdg-open", str(path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            pass  # xdg-open no disponible
 
     def run(self):
         console.clear()
@@ -130,7 +143,7 @@ class App:
         console.print()
 
         # Calcular impuestos provisionales
-        fiscal = calcular_impuestos_mensuales(self.db, year)
+        fiscal = calcular_impuestos_mensuales(self.db, year, config=self.config)
 
         # ── Tabla resumen anual ──
         table = Table(
@@ -714,6 +727,7 @@ class App:
                     return
             path = self.exporter.monthly_report(year, month, output_dir)
             console.print(f"[green]Reporte guardado en: {path}[/green]")
+            self._open_file(path)
         elif opcion == 2:
             year = IntPrompt.ask("Año", default=CURRENT_YEAR)
             n_rec = self.db.count(tipo="recibida", fecha_inicio=date(year, 1, 1), fecha_fin=date(year + 1, 1, 1))
@@ -721,6 +735,7 @@ class App:
             console.print(f"  Registros: {n_rec} recibidas, {n_emi} emitidas")
             path = self.exporter.annual_report(year, output_dir)
             console.print(f"[green]Reporte guardado en: {path}[/green]")
+            self._open_file(path)
 
     # ── Análisis Fiscal Inteligente ────────────────────────────────────
 
@@ -896,7 +911,7 @@ class App:
 
         console.print("[dim]Calculando con deducciones clasificadas...[/dim]")
         regimen = self._get_regimen()
-        fiscal = calcular_impuestos_mensuales(self.db, year, regimen)
+        fiscal = calcular_impuestos_mensuales(self.db, year, regimen, config=self.config)
 
         # Tabla mensual
         table = Table(
@@ -1122,6 +1137,8 @@ class App:
                         if self.config.contribuyente else ""
                     ),
                     model=self.config.ia.model,
+                    provider=self.config.ia.provider,
+                    base_url=self.config.ia.base_url,
                 )
                 resumen = clasificador.resumen_periodo(recibidas)
                 ia_sugerencias = asistente.generar_sugerencias(resumen, ingresos)

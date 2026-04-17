@@ -1,5 +1,9 @@
 """Entry point: python -m satextractor"""
 
+from satextractor.utils import get_path
+
+config_path = get_path("config.toml")
+
 import sys
 from pathlib import Path
 
@@ -30,16 +34,14 @@ def main():
     except FileNotFoundError:
         console.print(
             "[yellow]No se encontró config.toml. "
-            "La descarga del SAT no estará disponible.[/yellow]"
-            "\n[dim]Copia config.example.toml a config.toml y "
-            "configura tu FIEL y RFC.[/dim]\n"
+            "Usa Configuración desde el menú para crear uno.[/yellow]\n"
         )
+        config = Config.create_default()
     except Exception as e:
         console.print(f"[yellow]Error cargando config: {e}[/yellow]\n")
+        config = Config.create_default()
 
-    db_path = Path("~/satextractor.db").expanduser()
-    if config:
-        db_path = config.database.path
+    db_path = config.database.path
 
     if use_classic:
         from .ui.app import App

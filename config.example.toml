@@ -15,11 +15,14 @@ output_dir = "~/reportes_sat"
 # ── Análisis Fiscal Inteligente (opcional) ──
 
 [contribuyente]
-regimen = "612"  # 612=PFAE, 626=RESICO
+regimen = "612"  # 601=PM General, 603=PM No Lucrativa, 612=PFAE, 625=Plataformas, 626=RESICO
 # actividad = "Desarrollo de software"  # Descripción de tu actividad económica
+# coeficiente_utilidad = 0.35  # Solo para régimen 601 (PM), del ejercicio anterior
+# actividad_plataforma = "otros"  # Solo para régimen 625: transporte, alimentos, hospedaje, venta_bienes, otros
 
 [ia]
-# provider = "anthropic"
-# api_key = ""  # O usa variable de entorno ANTHROPIC_API_KEY
-# model = "claude-sonnet-4-6"
+# provider = "anthropic"  # anthropic, deepseek, openrouter
+# api_key = ""  # O usa variable de entorno ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / OPENROUTER_API_KEY
+# model = "claude-sonnet-4-6"  # deepseek-chat / anthropic/claude-sonnet-4-6 (openrouter)
+# base_url = ""  # Solo para openrouter u otro proveedor OpenAI-compatible
 # cache_dias = 90

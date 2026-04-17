@@ -296,12 +296,248 @@ fundamento = "Art. 34 Fracc. VIII LISR"
 tasa_anual = 25
 fundamento = "Art. 34 Fracc. VI LISR"
 
+# ── Régimen 601: General de Ley Personas Morales (SA, SA de CV, SC) ────────
+[regimenes."601"]
+nombre = "General de Ley Personas Morales"
+fundamento = "LISR Título II, Art. 9-78"
+descripcion = "Personas morales constituidas conforme a las leyes mexicanas (SA, SA de CV, SC, S de RL, etc.)"
+metodo_isr = "pm_flat"
+tasa_isr = 30
+
+# ── Deducciones autorizadas PM (Art. 25 LISR) ─────────────────────────────
+[regimenes."601".deducciones.devoluciones]
+nombre = "Devoluciones, descuentos o bonificaciones"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. I LISR"
+requisitos = ["CFDI de tipo Egreso"]
+
+[regimenes."601".deducciones.costo_ventas]
+nombre = "Costo de lo vendido"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. II LISR, Art. 39-43 LISR"
+requisitos = ["CFDI válido", "Determinado conforme a Sección III del Capítulo II"]
+
+[regimenes."601".deducciones.gastos_operacion]
+nombre = "Gastos netos de operación"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido", "Estrictamente indispensable para la actividad"]
+
+[regimenes."601".deducciones.inversiones]
+nombre = "Inversiones (depreciación)"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. IV LISR, Art. 31-38 LISR"
+requisitos = ["CFDI válido", "Deducción por depreciación según Art. 31-38"]
+
+[regimenes."601".deducciones.intereses_prestamos]
+nombre = "Intereses devengados"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. VII LISR"
+requisitos = ["Créditos utilizados para la actividad", "Documentación soporte"]
+
+[regimenes."601".deducciones.cuotas_imss]
+nombre = "Cuotas patronales al IMSS"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. VI LISR"
+requisitos = ["Comprobante de pago al IMSS"]
+
+[regimenes."601".deducciones.salarios]
+nombre = "Sueldos, salarios y asimilados"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. V LISR"
+requisitos = ["Nómina timbrada (CFDI tipo N)", "Retención y entero de ISR", "Inscripción IMSS de trabajadores"]
+
+[regimenes."601".deducciones.prevision_social]
+nombre = "Previsión social (vales, fondo ahorro, seguros)"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. X LISR, Art. 7 y 27 LISR"
+requisitos = ["Generalidad (beneficio a todos los trabajadores)", "No discriminatorio", "CFDI válido"]
+nota = "Incluye vales de despensa, fondo de ahorro, seguro de vida, seguro de gastos médicos para empleados"
+
+[regimenes."601".deducciones.aportaciones_sar_infonavit]
+nombre = "Aportaciones SAR e INFONAVIT"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. VII LISR"
+requisitos = ["Comprobante de pago al INFONAVIT/SAR"]
+
+[regimenes."601".deducciones.ptu]
+nombre = "Participación de los Trabajadores en las Utilidades (PTU)"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. IX LISR"
+requisitos = ["Pagada efectivamente", "Dentro del plazo legal"]
+nota = "Deducible en el ejercicio en que se pague, con tope de 3 meses de salario o promedio de últimos 3 años"
+
+[regimenes."601".deducciones.impuesto_local]
+nombre = "Impuestos locales"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. VI LISR"
+requisitos = ["Comprobante de pago"]
+
+[regimenes."601".deducciones.alimentos_restaurante]
+nombre = "Consumo en restaurantes"
+porcentaje = 91.5
+fundamento = "Art. 28 Fracc. XX LISR"
+requisitos = ["Pago con tarjeta de crédito, débito o monedero electrónico", "CFDI válido"]
+forma_pago_requerida = ["03", "04", "28", "29"]
+
+[regimenes."601".deducciones.combustible]
+nombre = "Combustibles para vehículos"
+porcentaje = 100
+fundamento = "Art. 27 Fracc. III LISR"
+requisitos = ["Pago con medio electrónico", "CFDI válido"]
+forma_pago_requerida = ["03", "04", "28", "29"]
+
+[regimenes."601".deducciones.vehiculos_inversion]
+nombre = "Automóviles (inversión)"
+porcentaje = 25
+fundamento = "Art. 34 Fracc. VI, Art. 36 Fracc. II LISR"
+limite_monto = 175000.0
+requisitos = ["MOI máximo deducible $175,000", "Depreciación 25% anual"]
+
+[regimenes."601".deducciones.vehiculos_electricos]
+nombre = "Automóviles eléctricos (inversión)"
+porcentaje = 25
+fundamento = "Art. 36 Fracc. II LISR"
+limite_monto = 250000.0
+requisitos = ["MOI máximo deducible $250,000", "Depreciación 25% anual"]
+
+[regimenes."601".deducciones.seguros]
+nombre = "Primas de seguros"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.telecomunicaciones]
+nombre = "Servicios de telecomunicaciones"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.renta_inmueble]
+nombre = "Renta de local u oficina"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido", "Contrato de arrendamiento"]
+
+[regimenes."601".deducciones.servicios_profesionales]
+nombre = "Honorarios por servicios profesionales"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.papeleria_oficina]
+nombre = "Papelería y artículos de oficina"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.servicios_basicos]
+nombre = "Electricidad, agua y servicios básicos"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.software_licencias]
+nombre = "Software y licencias"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR (gasto) o Art. 33 LISR (inversión)"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.mantenimiento_equipo]
+nombre = "Mantenimiento y reparación de equipo"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.capacitacion]
+nombre = "Capacitación y formación"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."601".deducciones.consumo_personal]
+nombre = "Consumo personal (no deducible)"
+porcentaje = 0
+fundamento = "Art. 28 Fracc. I LISR"
+
+[regimenes."601".deducciones.consumo_posible_negocio]
+nombre = "Posible gasto de negocio (verificar)"
+porcentaje = 100
+fundamento = "Art. 25 Fracc. III LISR"
+requisitos = ["Verificar que sea estrictamente indispensable"]
+
+# ── Régimen 603: PM con Fines no Lucrativos (AC, SC sin lucro) ────────────
+[regimenes."603"]
+nombre = "Personas Morales con Fines no Lucrativos"
+fundamento = "LISR Título III, Art. 79-89"
+descripcion = "Asociaciones civiles, sociedades civiles sin fines de lucro, instituciones de asistencia"
+metodo_isr = "exenta"
+nota = "Generalmente exentas de ISR. Causantes de IVA según actividades. El remanente distribuible puede causar ISR para los integrantes."
+
+[regimenes."603".deducciones.gastos_operacion]
+nombre = "Gastos de operación del objeto social"
+porcentaje = 100
+fundamento = "Art. 79 LISR"
+requisitos = ["CFDI válido", "Relacionado con el objeto social"]
+
+[regimenes."603".deducciones.salarios]
+nombre = "Sueldos y salarios"
+porcentaje = 100
+fundamento = "Art. 79 LISR"
+requisitos = ["Nómina timbrada"]
+
+[regimenes."603".deducciones.servicios_profesionales]
+nombre = "Honorarios por servicios profesionales"
+porcentaje = 100
+fundamento = "Art. 79 LISR"
+requisitos = ["CFDI válido"]
+
+[regimenes."603".deducciones.consumo_personal]
+nombre = "Consumo personal (no deducible)"
+porcentaje = 0
+fundamento = "Art. 79 LISR"
+
+# ── Régimen 625: Plataformas Tecnológicas ──────────────────────────────────
+[regimenes."625"]
+nombre = "Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"
+fundamento = "LISR Art. 113-A a 113-D"
+descripcion = "Ingresos a través de plataformas digitales: transporte (Uber, Didi), alimentos (Rappi, UberEats), hospedaje (Airbnb), venta de bienes"
+metodo_isr = "plataformas"
+limite_ingresos_definitivo = 300000
+nota = "Las plataformas retienen ISR e IVA. Si ingresos anuales < $300,000, los pagos pueden ser definitivos."
+
+[regimenes."625".tasas_retencion]
+transporte = 2.1
+alimentos = 2.1
+hospedaje = 4.0
+venta_bienes = 1.0
+otros = 2.1
+iva_digital = 8.0
+
+# RESICO y Plataformas no tienen deducciones empresariales significativas
+# Solo aplican deducciones personales en declaración anual (si no son pagos definitivos)
+[regimenes."625".deducciones_personales]
+limite_global = "15% ingreso anual o 5 UMA anuales"
+nota = "Solo aplica si el contribuyente presenta declaración anual (ingresos > $300,000 o no optó por pagos definitivos)"
+
 # ── Régimen 626: Simplificado de Confianza (RESICO) ─────────────────────────
 [regimenes."626"]
 nombre = "Régimen Simplificado de Confianza"
 fundamento = "LISR Art. 113-E a 113-J"
 descripcion = "Régimen simplificado con tasa fija sobre ingresos, sin deducciones autorizadas empresariales"
-nota = "RESICO no permite deducciones de gastos empresariales. Solo aplican deducciones personales en declaración anual."
+metodo_isr = "resico"
+limite_ingresos = 3500000
+nota = "RESICO no permite deducciones de gastos empresariales. Solo aplican deducciones personales en declaración anual. Si ingresos > $3.5M, se sale de RESICO."
+
+# Tabla ISR mensual RESICO (Art. 113-E LISR)
+[regimenes."626".tabla_isr_mensual]
+tramos = [
+    { limite_inferior = 0.01, limite_superior = 25000.00, tasa = 1.00 },
+    { limite_inferior = 25000.01, limite_superior = 50000.00, tasa = 1.10 },
+    { limite_inferior = 50000.01, limite_superior = 83333.33, tasa = 1.50 },
+    { limite_inferior = 83333.34, limite_superior = 208333.33, tasa = 2.00 },
+    { limite_inferior = 208333.34, limite_superior = 3500000.00, tasa = 2.50 },
+]
 
 [regimenes."626".deducciones_personales]
 limite_global = "15% ingreso anual o 5 UMA anuales"

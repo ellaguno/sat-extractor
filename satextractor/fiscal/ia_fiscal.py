@@ -1,7 +1,9 @@
 """Asistente fiscal con IA para clasificación de gastos y sugerencias.
 
-Usa la API de Claude para clasificar conceptos ambiguos y generar
-recomendaciones fiscales personalizadas.
+Soporta múltiples proveedores:
+- Anthropic (Claude) — usa SDK nativo
+- DeepSeek — API compatible con OpenAI
+- OpenRouter — API compatible con OpenAI (múltiples modelos)
 """
 
 import json
@@ -9,6 +11,27 @@ import os
 from decimal import Decimal
 
 from ..models import Comprobante, Concepto, ResultadoClasificacion, Sugerencia
+
+# ── URLs base por proveedor ───────────────────────────────────────────────
+
+_PROVIDER_DEFAULTS = {
+    "anthropic": {
+        "model": "claude-sonnet-4-6",
+        "env_key": "ANTHROPIC_API_KEY",
+    },
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "env_key": "DEEPSEEK_API_KEY",
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "anthropic/claude-sonnet-4-6",
+        "env_key": "OPENROUTER_API_KEY",
+    },
+}
+
+# ── Prompts ───────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT_CLASIFICACION = """\
 Eres un asistente fiscal experto en la Ley del Impuesto Sobre la Renta (LISR) \
@@ -19,12 +42,7 @@ deducibles fiscalmente.
 
 Reglas clave para este régimen:
 - Fundamento: {fundamento}
-- Las deducciones deben ser estrictamente indispensables para la actividad
-- Los pagos > $2,000 MXN deben ser bancarizados (Art. 27 Fracc. III LISR)
-- Consumo en restaurantes: deducible al 91.5% solo con pago con tarjeta
-- Combustibles: solo deducibles con pago electrónico
-- Inversiones: se deducen por depreciación (Art. 31-38 LISR)
-- Deducciones personales: Art. 151 LISR (médicos, colegiaturas, etc.)
+{reglas_especificas}
 
 La actividad del contribuyente es: {actividad}
 
@@ -55,9 +73,39 @@ Clasifica el siguiente concepto de CFDI:
 ¿Qué porcentaje? ¿Qué requisitos debe cumplir?
 """
 
+_REGLAS_POR_REGIMEN = {
+    "612": """\
+- Las deducciones deben ser estrictamente indispensables para la actividad
+- Los pagos > $2,000 MXN deben ser bancarizados (Art. 27 Fracc. III LISR)
+- Consumo en restaurantes: deducible al 91.5% solo con pago con tarjeta
+- Combustibles: solo deducibles con pago electrónico
+- Inversiones: se deducen por depreciación (Art. 31-38 LISR)
+- Deducciones personales: Art. 151 LISR (médicos, colegiaturas, etc.)""",
+    "626": """\
+- RESICO NO permite deducciones empresariales
+- ISR se calcula con tasa fija sobre ingresos brutos (1% a 2.5%)
+- Solo aplican deducciones personales (Art. 151 LISR) en declaración anual
+- Límite de ingresos: $3,500,000 anuales""",
+    "601": """\
+- Persona Moral: ISR 30% flat sobre utilidad fiscal (Art. 9 LISR)
+- Deducciones más amplias: incluye salarios, previsión social, PTU
+- Los pagos > $2,000 MXN deben ser bancarizados
+- Inversiones: se deducen por depreciación (Art. 31-38 LISR)
+- NO aplican deducciones personales (son para personas físicas)""",
+    "603": """\
+- PM no lucrativa: generalmente exenta de ISR (Art. 79 LISR)
+- Puede causar IVA según sus actividades
+- El remanente distribuible causa ISR para los integrantes""",
+    "625": """\
+- Las plataformas tecnológicas retienen ISR e IVA
+- Tasas de retención ISR varían por actividad (1% a 4%)
+- Si ingresos < $300,000 anuales, pagos pueden ser definitivos
+- Si opta por pagos definitivos, no presenta declaración anual""",
+}
+
 _SYSTEM_PROMPT_SUGERENCIAS = """\
 Eres un asesor fiscal experto en México especializado en optimización \
-tributaria para personas físicas con actividad empresarial.
+tributaria para el régimen {regimen_nombre}.
 
 Analiza el resumen fiscal del contribuyente y genera sugerencias prácticas \
 y específicas para reducir su carga fiscal de manera legal.
@@ -75,20 +123,37 @@ Responde en formato JSON como una lista de sugerencias:
 """
 
 
+def _extract_json(text: str) -> str:
+    """Extrae JSON de una respuesta que puede venir envuelta en markdown."""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0]
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0]
+    return text.strip()
+
+
 class AsistenteFiscal:
-    """Asistente de IA para clasificación fiscal y sugerencias."""
+    """Asistente de IA para clasificación fiscal y sugerencias.
+
+    Soporta proveedores: anthropic, deepseek, openrouter.
+    """
 
     def __init__(
         self,
         api_key: str = "",
         regimen: str = "612",
         actividad: str = "",
-        model: str = "claude-sonnet-4-6",
+        model: str = "",
+        provider: str = "anthropic",
+        base_url: str = "",
     ):
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        defaults = _PROVIDER_DEFAULTS.get(provider, _PROVIDER_DEFAULTS["anthropic"])
+        self.provider = provider
+        self.api_key = api_key or os.environ.get(defaults["env_key"], "")
         self.regimen = regimen
         self.actividad = actividad
-        self.model = model
+        self.model = model or defaults["model"]
+        self.base_url = base_url or defaults.get("base_url", "")
         self._client = None
 
         # Cargar datos del régimen
@@ -97,6 +162,7 @@ class AsistenteFiscal:
         regimen_data = reglas.get("regimenes", {}).get(regimen, {})
         self.regimen_nombre = regimen_data.get("nombre", regimen)
         self.fundamento = regimen_data.get("fundamento", "LISR")
+        self.reglas_especificas = _REGLAS_POR_REGIMEN.get(regimen, _REGLAS_POR_REGIMEN["612"])
 
     @property
     def disponible(self) -> bool:
@@ -106,26 +172,61 @@ class AsistenteFiscal:
     @property
     def client(self):
         if self._client is None:
-            try:
-                import anthropic
-                self._client = anthropic.Anthropic(api_key=self.api_key)
-            except ImportError:
-                raise ImportError(
-                    "Instala el SDK de Anthropic: pip install anthropic"
-                )
+            if self.provider == "anthropic":
+                try:
+                    import anthropic
+                    self._client = anthropic.Anthropic(api_key=self.api_key)
+                except ImportError:
+                    raise ImportError("Instala el SDK: pip install anthropic")
+            else:
+                # DeepSeek, OpenRouter y cualquier proveedor OpenAI-compatible
+                try:
+                    from openai import OpenAI
+                    self._client = OpenAI(
+                        api_key=self.api_key,
+                        base_url=self.base_url,
+                    )
+                except ImportError:
+                    raise ImportError("Instala el SDK: pip install openai")
         return self._client
+
+    def _chat(self, system: str, user_msg: str, max_tokens: int = 1024) -> str:
+        """Envía un mensaje al modelo y retorna el texto de respuesta.
+
+        Abstrae las diferencias entre la API de Anthropic y OpenAI-compatible.
+        """
+        if self.provider == "anthropic":
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}],
+            )
+            return response.content[0].text
+        else:
+            # OpenAI-compatible (DeepSeek, OpenRouter)
+            response = self.client.chat.completions.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_msg},
+                ],
+            )
+            return response.choices[0].message.content
 
     def clasificar_concepto(
         self, concepto: Concepto, comprobante: Comprobante
     ) -> ResultadoClasificacion:
-        """Clasifica un concepto usando Claude."""
+        """Clasifica un concepto usando IA."""
         if not self.disponible:
-            raise RuntimeError("API key de Anthropic no configurada")
+            raise RuntimeError("API key no configurada")
 
         system = _SYSTEM_PROMPT_CLASIFICACION.format(
             regimen_nombre=self.regimen_nombre,
             regimen_clave=self.regimen,
             fundamento=self.fundamento,
+            reglas_especificas=self.reglas_especificas,
             actividad=self.actividad or "No especificada",
         )
 
@@ -140,22 +241,8 @@ class AsistenteFiscal:
             regimen=self.regimen_nombre,
         )
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=system,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-
-        # Parsear respuesta JSON
-        text = response.content[0].text
-        # Extraer JSON si viene envuelto en markdown
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-
-        data = json.loads(text.strip())
+        text = self._chat(system, user_msg)
+        data = json.loads(_extract_json(text))
 
         monto = concepto.importe
         if concepto.descuento:
@@ -184,7 +271,6 @@ class AsistenteFiscal:
         if not self.disponible:
             return []
 
-        # Preparar resumen para el prompt
         cats_resumen = {}
         for cat_id, cat_data in resumen.get("por_categoria", {}).items():
             cats_resumen[cat_id] = {
@@ -206,20 +292,12 @@ class AsistenteFiscal:
             "alertas_existentes": resumen.get("alertas", []),
         }, ensure_ascii=False, indent=2)
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=2048,
-            system=_SYSTEM_PROMPT_SUGERENCIAS,
-            messages=[{"role": "user", "content": user_msg}],
+        system = _SYSTEM_PROMPT_SUGERENCIAS.format(
+            regimen_nombre=self.regimen_nombre,
         )
+        text = self._chat(system, user_msg, max_tokens=2048)
 
-        text = response.content[0].text
-        if "```json" in text:
-            text = text.split("```json")[1].split("```")[0]
-        elif "```" in text:
-            text = text.split("```")[1].split("```")[0]
-
-        items = json.loads(text.strip())
+        items = json.loads(_extract_json(text))
         sugerencias = []
         for item in items:
             sugerencias.append(Sugerencia(
@@ -240,7 +318,6 @@ class AsistenteFiscal:
     def explicar_deduccion(self, resultado: ResultadoClasificacion) -> str:
         """Explica en lenguaje sencillo por qué algo es/no es deducible."""
         if not self.disponible:
-            # Explicación básica sin IA
             if resultado.es_deducible:
                 return (
                     f"Este gasto es deducible al {resultado.porcentaje_deducible}% "
@@ -256,15 +333,10 @@ class AsistenteFiscal:
             f"Explica en lenguaje sencillo (2-3 oraciones) por qué el gasto "
             f"'{resultado.concepto_descripcion}' "
             f"{'ES' if resultado.es_deducible else 'NO es'} deducible "
-            f"al {resultado.porcentaje_deducible}% para una persona física "
-            f"con actividad empresarial.\n"
+            f"al {resultado.porcentaje_deducible}% para un contribuyente "
+            f"en el régimen {self.regimen_nombre}.\n"
             f"Fundamento: {resultado.fundamento_legal}\n"
             f"Alertas: {resultado.alertas}"
         )
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.content[0].text
+        return self._chat("", prompt, max_tokens=300)

@@ -464,10 +464,16 @@ class ClasificadorDeducciones:
             monto_deducible = monto * Decimal(str(porcentaje / 100))
             alertas.append("Deducción personal - aplica en declaración anual")
         else:
-            # Sin regla específica, asumir gasto de operación
-            porcentaje = 100
-            fundamento = "Art. 103 Fracc. III LISR"
-            monto_deducible = monto
+            if not self.deducciones:
+                # Régimen sin deducciones empresariales (RESICO, Plataformas)
+                porcentaje = 0
+                fundamento = f"Régimen {self.regimen} no permite deducciones empresariales"
+                monto_deducible = Decimal("0")
+            else:
+                # Sin regla específica, asumir gasto de operación
+                porcentaje = 100
+                fundamento = "Art. 103 Fracc. III LISR"
+                monto_deducible = monto
 
         es_deducible = porcentaje > 0
 
