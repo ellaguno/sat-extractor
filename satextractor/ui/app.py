@@ -743,8 +743,9 @@ class App:
             console.print()
             console.print("  [1] Clasificar deducciones del periodo")
             console.print("  [2] Resumen por categoría de gasto")
-            console.print("  [3] Sugerencias de optimización")
-            console.print("  [4] Consultar deducibilidad de un CFDI")
+            console.print("  [3] ISR e IVA estimados a declarar")
+            console.print("  [4] Sugerencias de optimización")
+            console.print("  [5] Consultar deducibilidad de un CFDI")
             console.print("  [0] Volver")
             console.print()
 
@@ -760,8 +761,10 @@ class App:
             elif opt == 2:
                 self._fiscal_resumen_categorias()
             elif opt == 3:
-                self._fiscal_sugerencias()
+                self._fiscal_impuestos_periodo()
             elif opt == 4:
+                self._fiscal_sugerencias()
+            elif opt == 5:
                 self._fiscal_consultar_cfdi()
 
     def _fiscal_get_recibidas(self, year: int, month: int | None = None):
@@ -884,6 +887,119 @@ class App:
             f"\n  [green]Deducible:[/green]     ${total_deducible:,.2f}"
             f"\n  [red]No deducible:[/red]  ${no_ded:,.2f}"
             f"\n  [dim]V=deducible  !=alertas  ?=baja confianza  X=no deducible[/dim]"
+        )
+
+    def _fiscal_impuestos_periodo(self):
+        """Muestra ISR e IVA estimados a declarar por mes."""
+        console.print("\n[bold]ISR e IVA Estimados a Declarar[/bold]")
+        year = IntPrompt.ask("Año", default=CURRENT_YEAR)
+
+        console.print("[dim]Calculando con deducciones clasificadas...[/dim]")
+        regimen = self._get_regimen()
+        fiscal = calcular_impuestos_mensuales(self.db, year, regimen)
+
+        # Tabla mensual
+        table = Table(
+            title=f"Impuestos Provisionales - {year}",
+            title_style="bold magenta",
+            border_style="magenta",
+            show_lines=True,
+        )
+        table.add_column("Mes", style="bold", width=12)
+        table.add_column("Ingresos", justify="right", width=14)
+        table.add_column("Ded. Reales", justify="right", width=14)
+        table.add_column("No Deducible", justify="right", width=14)
+        table.add_column("IVA x Pagar", justify="right", width=14)
+        table.add_column("ISR Prov.", justify="right", width=14)
+        table.add_column("Total x Pagar", justify="right", width=14, style="bold")
+
+        grand_ingresos = 0.0
+        grand_ded = 0.0
+        grand_no_ded = 0.0
+        grand_iva = 0.0
+        grand_isr = 0.0
+
+        for fi in fiscal:
+            m = fi["mes"]
+            ingresos = fi["ingresos_mes"]
+            ded_reales = fi["deducciones_mes"]
+            no_ded = fi["deducciones_no_deducibles"]
+            iva_pagar = fi["iva_a_pagar"]
+            isr_prov = fi["isr_provisional"]
+            total_pagar = iva_pagar + isr_prov
+
+            grand_ingresos += ingresos
+            grand_ded += ded_reales
+            grand_no_ded += no_ded
+            grand_iva += iva_pagar
+            grand_isr += isr_prov
+
+            tiene_datos = ingresos > 0 or ded_reales > 0
+            if not tiene_datos:
+                table.add_row(
+                    f"[dim]{MESES[m]}[/dim]",
+                    "[dim]-[/dim]", "[dim]-[/dim]", "[dim]-[/dim]",
+                    "[dim]-[/dim]", "[dim]-[/dim]", "[dim]-[/dim]",
+                )
+                continue
+
+            iva_style = "red" if iva_pagar > 0 else "green"
+            isr_style = "red" if isr_prov > 0 else "dim"
+            no_ded_style = "red" if no_ded > 0 else "dim"
+
+            table.add_row(
+                MESES[m],
+                f"${ingresos:,.2f}",
+                f"[green]${ded_reales:,.2f}[/green]",
+                f"[{no_ded_style}]${no_ded:,.2f}[/{no_ded_style}]",
+                f"[{iva_style}]${iva_pagar:,.2f}[/{iva_style}]",
+                f"[{isr_style}]${isr_prov:,.2f}[/{isr_style}]",
+                f"${total_pagar:,.2f}",
+            )
+
+        grand_total = grand_iva + grand_isr
+        table.add_row(
+            "[bold]TOTAL[/bold]",
+            f"[bold]${grand_ingresos:,.2f}[/bold]",
+            f"[bold green]${grand_ded:,.2f}[/bold green]",
+            f"[bold red]${grand_no_ded:,.2f}[/bold red]" if grand_no_ded > 0 else "[bold]$0.00[/bold]",
+            f"[bold]${grand_iva:,.2f}[/bold]",
+            f"[bold]${grand_isr:,.2f}[/bold]",
+            f"[bold]${grand_total:,.2f}[/bold]",
+            end_section=True,
+        )
+        console.print(table)
+
+        # Detalle del último mes con datos
+        last_fi = None
+        for fi in reversed(fiscal):
+            if fi["ingresos_mes"] > 0 or fi["deducciones_mes"] > 0:
+                last_fi = fi
+                break
+
+        if last_fi:
+            m = last_fi["mes"]
+            console.print(f"\n[bold]Detalle {MESES[m]} {year}:[/bold]")
+            console.print(f"  IVA cobrado:           ${last_fi['iva_cobrado']:>12,.2f}")
+            console.print(f"  IVA acreditable:       ${last_fi['iva_acreditable']:>12,.2f}  [dim](solo de gastos deducibles)[/dim]")
+            console.print(f"  IVA retenido:          ${last_fi['iva_retenido']:>12,.2f}")
+            iva_style = "red" if last_fi['iva_a_pagar'] > 0 else "green"
+            console.print(f"  [bold]IVA a pagar:         [{iva_style}]${last_fi['iva_a_pagar']:>12,.2f}[/{iva_style}][/bold]")
+            console.print()
+            console.print(f"  Ingresos acumulados:   ${last_fi['ingresos_acum']:>12,.2f}")
+            console.print(f"  Deducciones acumuladas: ${last_fi['deducciones_acum']:>12,.2f}  [dim](solo deducibles)[/dim]")
+            console.print(f"  Base gravable:         ${last_fi['base_gravable']:>12,.2f}")
+            console.print(f"  ISR s/tarifa Art.96:   ${last_fi['isr_tarifa']:>12,.2f}")
+            console.print(f"  ISR retenido acum.:    ${last_fi['isr_retenido_acum']:>12,.2f}")
+            console.print(f"  Pagos prov. anteriores: ${last_fi['pagos_prov_anteriores']:>12,.2f}")
+            isr_style = "red" if last_fi['isr_provisional'] > 0 else "green"
+            console.print(f"  [bold]ISR provisional:     [{isr_style}]${last_fi['isr_provisional']:>12,.2f}[/{isr_style}][/bold]")
+
+        console.print(
+            "\n[dim]* IVA acreditable = solo IVA de gastos clasificados como deducibles[/dim]"
+            "\n[dim]* ISR = Art.96 LISR sobre (ingresos acum. - deducciones reales acum.)[/dim]"
+            "\n[dim]* No incluye depreciaciones de inversiones, PTU ni pérdidas de ejercicios anteriores[/dim]"
+            "\n[dim]* Estimado educativo - no sustituye asesoría fiscal profesional[/dim]"
         )
 
     def _fiscal_resumen_categorias(self):
