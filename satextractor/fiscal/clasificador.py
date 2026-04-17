@@ -335,13 +335,38 @@ class ClasificadorDeducciones:
     # ── Métodos internos ─────────────────────────────────────────────────────
 
     def _buscar_categoria(self, clave: str) -> tuple[str, dict | None]:
-        """Busca la categoría fiscal de una clave_prod_serv en el catálogo."""
+        """Busca la categoría fiscal de una clave_prod_serv en el catálogo.
+
+        Orden de prioridad (más específico gana):
+        1. Coincidencia exacta de código completo
+        2. Prefijo más largo que coincida
+        """
+        if not clave:
+            return "", None
+
         categorias = self.catalogo.get("categorias", {})
+
+        # 1. Coincidencia exacta (máxima prioridad)
         for cat_id, cat_data in categorias.items():
             if cat_id.startswith("_"):
                 continue
-            if _coincide_clave(clave, cat_data):
+            if clave in cat_data.get("claves", []):
                 return cat_id, cat_data
+
+        # 2. Prefijo más largo que coincida
+        best_match: tuple[str, dict] | None = None
+        best_prefix_len = 0
+        for cat_id, cat_data in categorias.items():
+            if cat_id.startswith("_"):
+                continue
+            for prefijo in cat_data.get("prefijos", []):
+                if clave.startswith(prefijo) and len(prefijo) > best_prefix_len:
+                    best_match = (cat_id, cat_data)
+                    best_prefix_len = len(prefijo)
+
+        if best_match:
+            return best_match
+
         return "", None
 
     def _nombre_categoria(self, categoria_id: str) -> str:
@@ -500,6 +525,10 @@ class ClasificadorDeducciones:
             return None
 
         if not row:
+            return None
+
+        # No usar cache de baja confianza — permite reclasificar con catálogo mejorado
+        if row["confianza"] is not None and row["confianza"] < 0.5:
             return None
 
         return ResultadoClasificacion(

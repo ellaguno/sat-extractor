@@ -253,6 +253,198 @@ claves = [
 ]
 prefijos = ["9212"]
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CATEGORÍAS POR SEGMENTO SAT (2 dígitos) — Cobertura amplia para códigos
+# no cubiertos por las categorías específicas de arriba.
+# La lógica de matching prioriza coincidencias más específicas (8→6→4→2 dígitos),
+# así que estas entradas solo aplican cuando no hay una regla más precisa.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Materiales e insumos de operación ────────────────────────────────────────
+[categorias.materiales_insumos]
+descripcion = "Materias primas, materiales e insumos de operación"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = [
+    "10", "11", "12", "13", "14",  # Plantas, minerales, químicos, resinas, papel
+    "30", "31", "32",               # Componentes estructurales, manufactura, electrónicos
+    "39", "40",                     # Iluminación, calefacción/ventilación
+    "47",                           # Equipo y suministros de limpieza
+]
+
+# ── Maquinaria y equipo industrial (inversión) ──────────────────────────────
+[categorias.maquinaria_equipo]
+descripcion = "Maquinaria y equipo industrial"
+deduccion = "inversiones"
+tipo_inversion = "maquinaria_equipo"
+claves = []
+prefijos = [
+    "20", "21", "22", "23", "24",  # Minería, agrícola, industrial, manufactura, manejo mat.
+]
+
+# ── Refacciones y autopartes ─────────────────────────────────────────────────
+[categorias.refacciones_autopartes]
+descripcion = "Refacciones, llantas, baterías y autopartes"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["26"]  # Neumáticos, baterías, refacciones vehiculares
+
+# ── Herramientas ─────────────────────────────────────────────────────────────
+[categorias.herramientas]
+descripcion = "Herramientas de mano y eléctricas"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["27"]
+
+# ── Equipo especializado (inversión) ─────────────────────────────────────────
+[categorias.equipo_especializado]
+descripcion = "Equipo especializado (laboratorio, médico, impresión, seguridad)"
+deduccion = "inversiones"
+tipo_inversion = "maquinaria_equipo"
+claves = []
+prefijos = [
+    "41",  # Equipo de laboratorio
+    "42",  # Equipo médico
+    "45",  # Equipo de impresión/duplicación
+    "46",  # Equipo de defensa/seguridad
+    "48",  # Equipo de hospitalidad/cocina
+    "49",  # Equipo deportivo/recreativo
+]
+
+# ── Productos de consumo general ─────────────────────────────────────────────
+[categorias.productos_consumo]
+descripcion = "Alimentos, fármacos, productos de uso general"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = [
+    "50",  # Alimentos y bebidas (no restaurante)
+    "51",  # Fármacos y productos medicinales
+    "52",  # Electrodomésticos
+    "53",  # Ropa y textiles
+    "54",  # Relojería y joyería
+    "55",  # Libros y publicaciones
+    "60",  # Instrumentos musicales
+]
+
+# ── Servicios generales ─────────────────────────────────────────────────────
+[categorias.servicios_generales]
+descripcion = "Servicios industriales, de limpieza, ambientales y otros"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = [
+    "70",  # Servicios agrícolas
+    "71",  # Servicios mineros/perforación
+    "73",  # Servicios de producción industrial
+    "76",  # Servicios de limpieza industrial
+    "77",  # Servicios ambientales
+    "82",  # Servicios editoriales y de diseño
+    "91",  # Servicios de cuidado personal
+    "93",  # Administración pública
+    "94",  # Servicios comunitarios y sociales
+]
+
+# ── Cobertura residual de segmentos con reglas específicas parciales ──────────
+# Estos segmentos ya tienen reglas más específicas (4-6 dígitos) para subcategorías
+# importantes. Este bloque captura los demás códigos del mismo segmento.
+[categorias.otros_combustibles_energia]
+descripcion = "Otros combustibles y productos energéticos"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["15"]  # Segmento completo; reglas específicas de combustible ganan por prefijo más largo
+
+[categorias.otros_vehiculos_transporte]
+descripcion = "Otros vehículos y equipo de transporte"
+deduccion = "inversiones"
+tipo_inversion = "automoviles"
+claves = []
+prefijos = ["25"]
+
+[categorias.otros_equipos_computo]
+descripcion = "Otros equipos de TI y accesorios"
+deduccion = "inversiones"
+tipo_inversion = "equipo_computo"
+claves = []
+prefijos = ["43"]
+
+[categorias.otros_articulos_oficina]
+descripcion = "Otros artículos y suministros de oficina"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["44"]
+
+[categorias.otros_muebles]
+descripcion = "Otros muebles y equipo de oficina"
+deduccion = "inversiones"
+tipo_inversion = "mobiliario_equipo_oficina"
+claves = []
+prefijos = ["56"]
+
+[categorias.otros_mantenimiento]
+descripcion = "Otros servicios de construcción y mantenimiento"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["72"]
+
+[categorias.otros_transporte]
+descripcion = "Otros servicios de transporte y logística"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["78"]
+
+[categorias.otros_servicios_negocio]
+descripcion = "Otros servicios de gestión y negocios"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["80"]
+
+[categorias.otros_servicios_ti]
+descripcion = "Otros servicios de ingeniería y TI"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["81"]
+
+[categorias.otros_servicios_publicos]
+descripcion = "Otros servicios de comunicación y públicos"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["83"]
+
+[categorias.otros_servicios_financieros]
+descripcion = "Otros servicios financieros y de seguros"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["84"]
+
+[categorias.otros_servicios_salud]
+descripcion = "Otros servicios de salud"
+deduccion_personal = "honorarios_medicos"
+claves = []
+prefijos = ["85"]
+
+[categorias.otros_educacion]
+descripcion = "Otros servicios educativos"
+deduccion_personal = "colegiaturas"
+claves = []
+prefijos = ["86"]
+
+[categorias.otros_alojamiento_viaje]
+descripcion = "Otros servicios de viaje, alojamiento y eventos"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["90"]
+
+[categorias.otros_servicios_funerarios]
+descripcion = "Otros servicios de defensa y orden público"
+deduccion = "gastos_operacion"
+claves = []
+prefijos = ["92"]
+
+[categorias.otros_inmuebles]
+descripcion = "Otros servicios inmobiliarios"
+deduccion = "renta_inmueble"
+claves = []
+prefijos = ["95"]
+
 # ── Categoría por defecto ─────────────────────────────────────────────────────
 [categorias._default]
 descripcion = "Gasto no clasificado automáticamente"
