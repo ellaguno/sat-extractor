@@ -229,11 +229,18 @@ class ExcelExporter:
                 ws.cell(row=row, column=18, value=c.estado)
 
                 cancelado = c.estado != "Vigente"
+                # N=Nómina y P=Pago no son gastos/ingresos comerciales
+                no_sumable = c.tipo_comprobante in ("N", "P")
                 if cancelado:
                     # Marcar fila completa con texto tachado y gris
                     cancel_font = Font(strikethrough=True, color="999999")
                     for col in range(1, 19):
                         ws.cell(row=row, column=col).font = cancel_font
+                elif no_sumable:
+                    # Marcar fila con gris claro (no suma en totales)
+                    dim_font = Font(color="888888", italic=True)
+                    for col in range(1, 19):
+                        ws.cell(row=row, column=col).font = dim_font
                 else:
                     total_subtotal += subtotal
                     total_descuento += descuento
@@ -244,12 +251,20 @@ class ExcelExporter:
 
                 row += 1
 
-            # Fila de totales
-            vigentes = sum(1 for c in cfdis if c.estado == "Vigente")
-            cancelados = len(cfdis) - vigentes
-            label = f"TOTAL ({vigentes} CFDIs"
+            # Fila de totales (solo cuenta I/E vigentes)
+            sumados = sum(1 for c in cfdis
+                          if c.estado == "Vigente" and c.tipo_comprobante not in ("N", "P"))
+            cancelados = sum(1 for c in cfdis if c.estado != "Vigente")
+            nominas = sum(1 for c in cfdis
+                          if c.estado == "Vigente" and c.tipo_comprobante in ("N", "P"))
+            extras = []
             if cancelados:
-                label += f", {cancelados} cancelado{'s' if cancelados > 1 else ''}"
+                extras.append(f"{cancelados} cancelado{'s' if cancelados > 1 else ''}")
+            if nominas:
+                extras.append(f"{nominas} nómina/pago no sumado{'s' if nominas > 1 else ''}")
+            label = f"TOTAL ({sumados} CFDIs"
+            if extras:
+                label += f", {', '.join(extras)}"
             label += ")"
             ws.cell(row=row, column=7, value=label).font = TOTAL_FONT
             for col, val in [

@@ -4,8 +4,6 @@ Clasifica conceptos de CFDIs como deducibles/no deducibles según el régimen
 fiscal del contribuyente, usando reglas locales y opcionalmente IA.
 """
 
-import hashlib
-import json
 import tomllib
 from decimal import Decimal
 from pathlib import Path
@@ -33,12 +31,6 @@ def _cargar_catalogo():
 
 
 # ── Utilidades ───────────────────────────────────────────────────────────────
-
-
-def _descripcion_hash(descripcion: str) -> str:
-    """Hash normalizado de la descripción para cache."""
-    norm = descripcion.strip().lower()
-    return hashlib.sha256(norm.encode()).hexdigest()[:16]
 
 
 def _coincide_clave(clave: str, catalogo_cat: dict) -> bool:
@@ -116,14 +108,7 @@ class ClasificadorDeducciones:
                 confianza=1.0,
             )
 
-        # 1. Buscar en cache
-        cached = self._buscar_cache(clave, desc)
-        if cached:
-            cached.monto_original = monto
-            cached.monto_deducible = monto * Decimal(str(cached.porcentaje_deducible / 100))
-            return cached
-
-        # 2. Buscar categoría por clave SAT
+        # 1. Buscar categoría por clave SAT
         categoria_id, categoria_data = self._buscar_categoria(clave)
 
         if categoria_data:
@@ -147,11 +132,8 @@ class ClasificadorDeducciones:
                 confianza=0.3,
             )
 
-        # Verificar requisitos generales
+        # Verificar requisitos generales (forma de pago, estado, etc.)
         self._verificar_requisitos_generales(resultado, comprobante)
-
-        # Guardar en cache
-        self._guardar_cache(resultado)
 
         return resultado
 
@@ -530,83 +512,8 @@ class ClasificadorDeducciones:
             resultado.porcentaje_deducible = 0
             resultado.monto_deducible = Decimal("0")
 
-    # ── Cache en BD ──────────────────────────────────────────────────────────
-
-    def _buscar_cache(self, clave: str, descripcion: str) -> ResultadoClasificacion | None:
-        """Busca clasificación previa en la BD."""
-        if not self.db:
-            return None
-        desc_hash = _descripcion_hash(descripcion)
-        try:
-            row = self.db.conn.execute(
-                """SELECT * FROM clasificaciones
-                   WHERE clave_prod_serv = ? AND descripcion_hash = ? AND regimen = ?""",
-                (clave, desc_hash, self.regimen),
-            ).fetchone()
-        except Exception:
-            return None
-
-        if not row:
-            return None
-
-        # No usar cache de baja confianza — permite reclasificar con catálogo mejorado
-        if row["confianza"] is not None and row["confianza"] < 0.5:
-            return None
-
-        return ResultadoClasificacion(
-            concepto_descripcion=descripcion,
-            clave_prod_serv=clave,
-            categoria=row["categoria"] or "no_clasificado",
-            es_deducible=bool(row["es_deducible"]),
-            porcentaje_deducible=row["porcentaje"],
-            monto_original=Decimal("0"),
-            monto_deducible=Decimal("0"),
-            fundamento_legal=row["fundamento"] or "",
-            requisitos=json.loads(row["requisitos"]) if row["requisitos"] else [],
-            alertas=json.loads(row["alertas"]) if row["alertas"] else [],
-            fuente="cache",
-            confianza=row["confianza"],
-        )
-
-    def _guardar_cache(self, resultado: ResultadoClasificacion):
-        """Guarda clasificación en la BD para futuras consultas."""
-        if not self.db:
-            return
-        if resultado.fuente == "cache":
-            return
-
-        desc_hash = _descripcion_hash(resultado.concepto_descripcion)
-        try:
-            self.db.conn.execute(
-                """INSERT INTO clasificaciones
-                   (clave_prod_serv, descripcion_hash, regimen, categoria,
-                    es_deducible, porcentaje, fundamento, requisitos, alertas,
-                    fuente, confianza)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(clave_prod_serv, descripcion_hash, regimen)
-                   DO UPDATE SET
-                    categoria=excluded.categoria,
-                    es_deducible=excluded.es_deducible,
-                    porcentaje=excluded.porcentaje,
-                    fundamento=excluded.fundamento,
-                    requisitos=excluded.requisitos,
-                    alertas=excluded.alertas,
-                    fuente=excluded.fuente,
-                    confianza=excluded.confianza""",
-                (
-                    resultado.clave_prod_serv,
-                    desc_hash,
-                    self.regimen,
-                    resultado.categoria,
-                    int(resultado.es_deducible),
-                    resultado.porcentaje_deducible,
-                    resultado.fundamento_legal,
-                    json.dumps(resultado.requisitos, ensure_ascii=False),
-                    json.dumps(resultado.alertas, ensure_ascii=False),
-                    resultado.fuente,
-                    resultado.confianza,
-                ),
-            )
-            self.db.conn.commit()
-        except Exception:
-            pass  # Cache failures should not break classification
+    # ── Cache en BD (reservado para clasificaciones de IA) ────────────────────
+    # El cache de reglas locales fue eliminado porque la deducibilidad depende
+    # del contexto del comprobante (forma_pago, estado, tipo_comprobante) y no
+    # solo de la clave SAT. Las reglas locales son rápidas y no necesitan cache.
+    # La tabla 'clasificaciones' se mantiene para futuro uso con IA.
