@@ -6,7 +6,6 @@ from pathlib import Path
 from rich.console import Console
 
 from .config import Config
-from .ui.app import App
 
 console = Console()
 
@@ -14,14 +13,17 @@ console = Console()
 def main():
     config = None
     config_path = None
+    use_classic = False
 
-    # Buscar argumento --config
+    # Parsear argumentos
     args = sys.argv[1:]
     for i, arg in enumerate(args):
         if arg == "--config" and i + 1 < len(args):
             config_path = Path(args[i + 1])
         elif arg.startswith("--config="):
             config_path = Path(arg.split("=", 1)[1])
+        elif arg == "--classic":
+            use_classic = True
 
     try:
         config = Config.load(config_path)
@@ -39,8 +41,13 @@ def main():
     if config:
         db_path = config.database.path
 
-    app = App(db_path=db_path, config=config)
-    app.run()
+    if use_classic:
+        from .ui.app import App
+        app = App(db_path=db_path, config=config)
+        app.run()
+    else:
+        from .ui.tui import run_tui
+        run_tui(db_path=db_path, config=config)
 
 
 if __name__ == "__main__":

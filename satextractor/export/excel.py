@@ -110,6 +110,10 @@ class ExcelExporter:
         ws.title = titulo_mes
         self._write_month_sheet(ws, year, month)
 
+        # Impuestos provisionales del mes
+        ws_imp = wb.create_sheet("Impuestos")
+        self._write_monthly_taxes(ws_imp, year, month)
+
         # Análisis fiscal del mes
         fecha_inicio = date(year, month, 1)
         fecha_fin = _next_month(year, month)
@@ -455,6 +459,202 @@ class ExcelExporter:
 
         ws.freeze_panes = "A2"
 
+
+    def _write_monthly_taxes(self, ws, year: int, month: int):
+        """Escribe pestaña de impuestos provisionales para un mes específico."""
+        fiscal = calcular_impuestos_mensuales(self.db, year, self.regimen)
+        fi = fiscal[month - 1]
+
+        titulo_mes = f"{MESES[month]} {year}"
+
+        # Título
+        title_cell = ws.cell(row=1, column=1, value=f"Impuestos Provisionales - {titulo_mes}")
+        title_cell.font = Font(bold=True, size=16, color="C65911")
+
+        FISCAL_SECTION_FILL = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+        FISCAL_HEADER_FILL = PatternFill(start_color="C65911", end_color="C65911", fill_type="solid")
+
+        # ── IVA del mes ──
+        row = 3
+        cell = ws.cell(row=row, column=1, value="IVA A PAGAR")
+        cell.font = Font(bold=True, size=12, color="C65911")
+        for col in range(1, 4):
+            ws.cell(row=row, column=col).fill = FISCAL_SECTION_FILL
+        row += 1
+
+        ws.column_dimensions["A"].width = 32
+        ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 50
+
+        iva_rows = [
+            ("IVA cobrado (trasladado en emitidas)", fi["iva_cobrado"], ""),
+            ("(-) IVA acreditable", fi["iva_acreditable"], "Solo de gastos clasificados como deducibles"),
+            ("(-) IVA retenido por clientes", fi["iva_retenido"], ""),
+            None,  # separator
+            ("IVA a pagar", fi["iva_a_pagar"], "IVA cobrado - IVA acreditable - IVA retenido"),
+        ]
+
+        for item in iva_rows:
+            if item is None:
+                row += 1
+                continue
+            label, val, nota = item
+            ws.cell(row=row, column=1, value=label)
+            cell = ws.cell(row=row, column=2, value=val)
+            cell.number_format = CURRENCY_FMT
+            if nota:
+                ws.cell(row=row, column=3, value=nota).font = Font(italic=True, size=9, color="888888")
+            if label == "IVA a pagar":
+                ws.cell(row=row, column=1).font = TOTAL_FONT
+                cell.font = TOTAL_FONT
+                if val > 0:
+                    cell.font = Font(bold=True, color="C62828")
+                elif val < 0:
+                    cell.font = Font(bold=True, color="2E7D32")
+                for c in range(1, 3):
+                    ws.cell(row=row, column=c).border = Border(top=Side(style="thin", color="C65911"))
+            row += 1
+
+        # ── ISR provisional del mes ──
+        row += 1
+        cell = ws.cell(row=row, column=1, value="ISR PROVISIONAL")
+        cell.font = Font(bold=True, size=12, color="C65911")
+        for col in range(1, 4):
+            ws.cell(row=row, column=col).fill = FISCAL_SECTION_FILL
+        row += 1
+
+        isr_rows = [
+            ("Ingresos del mes", fi["ingresos_mes"], ""),
+            ("Deducciones reales del mes", fi["deducciones_mes"], "Solo gastos deducibles"),
+            ("Deducciones no deducibles del mes", fi["deducciones_no_deducibles"], "Consumo personal, efectivo >$2,000, etc."),
+            None,
+            ("Ingresos acumulados ene-" + MESES[month][:3].lower(), fi["ingresos_acum"], ""),
+            ("Deducciones acumuladas ene-" + MESES[month][:3].lower(), fi["deducciones_acum"], "Solo deducibles"),
+            ("Base gravable acumulada", fi["base_gravable"], "Ingresos acum. - Deducciones acum."),
+            None,
+            ("ISR según tarifa Art. 96 LISR", fi["isr_tarifa"], "Tarifa aplicada al periodo acumulado"),
+            ("(-) ISR retenido acumulado", fi["isr_retenido_acum"], "Retenciones de clientes ene-" + MESES[month][:3].lower()),
+            ("(-) Pagos provisionales anteriores", fi["pagos_prov_anteriores"], "ISR pagado en meses anteriores"),
+            None,
+            ("ISR provisional a pagar", fi["isr_provisional"], ""),
+        ]
+
+        for item in isr_rows:
+            if item is None:
+                row += 1
+                continue
+            label, val, nota = item
+            ws.cell(row=row, column=1, value=label)
+            cell = ws.cell(row=row, column=2, value=val)
+            cell.number_format = CURRENCY_FMT
+            if nota:
+                ws.cell(row=row, column=3, value=nota).font = Font(italic=True, size=9, color="888888")
+            if "no deducible" in label.lower():
+                cell.font = FISCAL_RED
+            if label == "ISR provisional a pagar":
+                ws.cell(row=row, column=1).font = TOTAL_FONT
+                cell.font = TOTAL_FONT
+                if val > 0:
+                    cell.font = Font(bold=True, color="C62828")
+                for c in range(1, 3):
+                    ws.cell(row=row, column=c).border = Border(top=Side(style="thin", color="C65911"))
+            row += 1
+
+        # ── Resumen total a pagar ──
+        row += 1
+        cell = ws.cell(row=row, column=1, value="TOTAL A PAGAR EN EL MES")
+        cell.font = Font(bold=True, size=12, color="C65911")
+        for col in range(1, 4):
+            ws.cell(row=row, column=col).fill = FISCAL_SECTION_FILL
+        row += 1
+
+        total_pagar = round(fi["iva_a_pagar"] + fi["isr_provisional"], 2)
+        resumen_rows = [
+            ("IVA a pagar", fi["iva_a_pagar"]),
+            ("ISR provisional", fi["isr_provisional"]),
+        ]
+        for label, val in resumen_rows:
+            ws.cell(row=row, column=1, value=label)
+            cell = ws.cell(row=row, column=2, value=val)
+            cell.number_format = CURRENCY_FMT
+            row += 1
+
+        ws.cell(row=row, column=1, value="TOTAL").font = Font(bold=True, size=13)
+        cell = ws.cell(row=row, column=2, value=total_pagar)
+        cell.number_format = CURRENCY_FMT
+        cell.font = Font(bold=True, size=13, color="C62828" if total_pagar > 0 else "2E7D32")
+        for c in range(1, 3):
+            ws.cell(row=row, column=c).border = Border(top=Side(style="double", color="C65911"))
+        row += 1
+
+        # ── Contexto: tabla acumulada ene-mes ──
+        row += 1
+        cell = ws.cell(row=row, column=1, value=f"CONTEXTO ACUMULADO ENE-{MESES[month].upper()}")
+        cell.font = Font(bold=True, size=12, color="C65911")
+        for col in range(1, 4):
+            ws.cell(row=row, column=col).fill = FISCAL_SECTION_FILL
+        row += 1
+
+        ctx_headers = ["Mes", "Ingresos", "Ded. Reales", "No Deducible",
+                        "IVA x Pagar", "ISR Prov.", "Total x Pagar"]
+        for col_idx, h in enumerate(ctx_headers, 1):
+            cell = ws.cell(row=row, column=col_idx, value=h)
+            cell.fill = FISCAL_HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center")
+        row += 1
+
+        grand = {"iva": 0.0, "isr": 0.0}
+        for m in range(1, month + 1):
+            fm = fiscal[m - 1]
+            total_m = round(fm["iva_a_pagar"] + fm["isr_provisional"], 2)
+            grand["iva"] += fm["iva_a_pagar"]
+            grand["isr"] += fm["isr_provisional"]
+
+            ws.cell(row=row, column=1, value=MESES[m])
+            vals = [
+                fm["ingresos_mes"], fm["deducciones_mes"],
+                fm["deducciones_no_deducibles"], fm["iva_a_pagar"],
+                fm["isr_provisional"], total_m,
+            ]
+            for col_idx, val in enumerate(vals):
+                cell = ws.cell(row=row, column=col_idx + 2, value=val)
+                cell.number_format = CURRENCY_FMT
+
+            # Resaltar mes actual
+            if m == month:
+                highlight = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+                for col in range(1, 8):
+                    ws.cell(row=row, column=col).fill = highlight
+            row += 1
+
+        # Total acumulado
+        ws.cell(row=row, column=1, value="ACUMULADO").font = TOTAL_FONT
+        cell = ws.cell(row=row, column=5, value=grand["iva"])
+        cell.number_format = CURRENCY_FMT
+        cell.font = TOTAL_FONT
+        cell = ws.cell(row=row, column=6, value=grand["isr"])
+        cell.number_format = CURRENCY_FMT
+        cell.font = TOTAL_FONT
+        cell = ws.cell(row=row, column=7, value=round(grand["iva"] + grand["isr"], 2))
+        cell.number_format = CURRENCY_FMT
+        cell.font = TOTAL_FONT
+        for col in range(1, 8):
+            ws.cell(row=row, column=col).border = Border(top=Side(style="thin", color="C65911"))
+        row += 2
+
+        # Notas
+        notas = [
+            "* IVA a Pagar = IVA cobrado - IVA acreditable (solo de gastos deducibles) - IVA retenido",
+            "* ISR Prov. = Tarifa Art. 96 LISR sobre base gravable acumulada - ISR retenido acum. - pagos prov. anteriores",
+            "* Ded. Reales = solo gastos clasificados como deducibles. No incluye depreciaciones ni pérdidas anteriores",
+            "* Estimado educativo - no sustituye asesoría fiscal profesional",
+        ]
+        for nota in notas:
+            ws.cell(row=row, column=1, value=nota).font = Font(italic=True, size=9, color="888888")
+            row += 1
+
+        ws.freeze_panes = "A2"
 
     def _get_gastos_deducibles(self, fecha_inicio: date, fecha_fin: date):
         """Obtiene facturas recibidas vigentes tipo I/E (gastos) en un rango."""
