@@ -9,6 +9,7 @@ from openpyxl.utils import get_column_letter
 
 from ..db.repository import Repository
 from ..fiscal import calcular_impuestos_mensuales
+from ..fiscal.clasificador import ClasificadorDeducciones
 from ..models import TIPO_COMPROBANTE
 
 # Estilos
@@ -49,9 +50,21 @@ MESES = [
 ]
 
 
+# Estilos para análisis fiscal
+DEDUCIBLE_FILL = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+NO_DEDUCIBLE_FILL = PatternFill(start_color="FCE4EC", end_color="FCE4EC", fill_type="solid")
+ALERTA_FILL = PatternFill(start_color="FFF3E0", end_color="FFF3E0", fill_type="solid")
+FISCAL_GREEN = Font(color="2E7D32")
+FISCAL_RED = Font(color="C62828")
+FISCAL_ORANGE = Font(color="E65100")
+SUGERENCIA_FILL = PatternFill(start_color="E8EAF6", end_color="E8EAF6", fill_type="solid")
+SUGERENCIA_FONT = Font(bold=True, size=12, color="283593")
+
+
 class ExcelExporter:
-    def __init__(self, db: Repository):
+    def __init__(self, db: Repository, regimen: str = "612"):
         self.db = db
+        self.regimen = regimen
 
     def annual_report(self, year: int, output_dir: Path) -> Path:
         """Genera reporte anual: pestaña resumen + una pestaña por mes."""
@@ -70,6 +83,14 @@ class ExcelExporter:
         for month in range(1, 13):
             ws = wb.create_sheet(MESES[month])
             self._write_month_sheet(ws, year, month)
+
+        # Pestaña de Análisis Fiscal
+        ws_fiscal = wb.create_sheet("Análisis Fiscal")
+        self._write_fiscal_analysis(ws_fiscal, year)
+
+        # Pestaña de Sugerencias
+        ws_sug = wb.create_sheet("Sugerencias")
+        self._write_suggestions(ws_sug, year)
 
         wb.save(str(output_path))
         return output_path
@@ -373,6 +394,323 @@ class ExcelExporter:
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 2, column=1, value=(
             "* ISR Prov. = Art.96 LISR sobre (ingresos - deducciones) - ISR retenido - pagos prov. anteriores (no incluye depreciaciones, PTU ni pérdidas ant.)"
+        )).font = Font(italic=True, size=9, color="888888")
+
+        ws.freeze_panes = "A2"
+
+
+    def _get_recibidas_year(self, year: int):
+        """Obtiene todas las facturas recibidas del año."""
+        return self.db.search(
+            tipo="recibida",
+            fecha_inicio=date(year, 1, 1),
+            fecha_fin=date(year + 1, 1, 1),
+            limit=10000,
+        )
+
+    def _write_fiscal_analysis(self, ws, year: int):
+        """Escribe la pestaña de análisis fiscal con clasificación de deducciones."""
+        clasificador = ClasificadorDeducciones(self.regimen, self.db)
+        recibidas = self._get_recibidas_year(year)
+
+        # Título
+        title_cell = ws.cell(row=1, column=1, value=f"Análisis Fiscal - {year}")
+        title_cell.font = Font(bold=True, size=16, color="283593")
+
+        if not recibidas:
+            ws.cell(row=3, column=1, value="Sin facturas recibidas para analizar.").font = Font(
+                italic=True, color="888888"
+            )
+            return
+
+        # ── Sección 1: Resumen por Categoría ──
+        row = 3
+        cell = ws.cell(row=row, column=1, value="RESUMEN POR CATEGORÍA DE GASTO")
+        cell.font = SUGERENCIA_FONT
+        for col in range(1, 8):
+            ws.cell(row=row, column=col).fill = SUGERENCIA_FILL
+        row += 1
+
+        cat_headers = [
+            ("Categoría", 32), ("Conceptos", 12), ("Monto Total", 16),
+            ("Monto Deducible", 16), ("No Deducible", 16), ("% Deducible", 12),
+            ("Alertas", 6),
+        ]
+        for col_idx, (h, w) in enumerate(cat_headers, 1):
+            cell = ws.cell(row=row, column=col_idx, value=h)
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center")
+            ws.column_dimensions[get_column_letter(col_idx)].width = w
+        row += 1
+
+        resumen = clasificador.resumen_periodo(recibidas)
+
+        cats_sorted = sorted(
+            resumen["por_categoria"].items(),
+            key=lambda x: float(x[1]["monto_deducible"]),
+            reverse=True,
+        )
+
+        for cat_id, cat_data in cats_sorted:
+            monto_orig = float(cat_data["monto_original"])
+            monto_ded = float(cat_data["monto_deducible"])
+            monto_no_ded = monto_orig - monto_ded
+            pct = cat_data["porcentaje"]
+            n_alertas = len(cat_data["alertas"])
+
+            ws.cell(row=row, column=1, value=cat_data["nombre"])
+            ws.cell(row=row, column=2, value=cat_data["num_conceptos"]).alignment = Alignment(horizontal="center")
+
+            for col, val in [(3, monto_orig), (4, monto_ded), (5, monto_no_ded)]:
+                cell = ws.cell(row=row, column=col, value=val)
+                cell.number_format = CURRENCY_FMT
+
+            pct_cell = ws.cell(row=row, column=6, value=pct / 100)
+            pct_cell.number_format = '0%'
+            pct_cell.alignment = Alignment(horizontal="center")
+
+            if n_alertas:
+                ws.cell(row=row, column=7, value=n_alertas).alignment = Alignment(horizontal="center")
+
+            # Colorear fila según deducibilidad
+            if pct >= 100:
+                for col in range(1, 8):
+                    ws.cell(row=row, column=col).fill = DEDUCIBLE_FILL
+            elif pct == 0:
+                for col in range(1, 8):
+                    ws.cell(row=row, column=col).fill = NO_DEDUCIBLE_FILL
+            elif n_alertas > 0:
+                for col in range(1, 8):
+                    ws.cell(row=row, column=col).fill = ALERTA_FILL
+
+            row += 1
+
+        # Fila de totales
+        total_orig = float(resumen["total_original"])
+        total_ded = float(resumen["total_deducible"])
+        total_no_ded = float(resumen["total_no_deducible"])
+        pct_global = resumen["porcentaje_global"]
+
+        ws.cell(row=row, column=1, value="TOTAL").font = TOTAL_FONT
+        for col, val in [(3, total_orig), (4, total_ded), (5, total_no_ded)]:
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.number_format = CURRENCY_FMT
+            cell.font = TOTAL_FONT
+        pct_cell = ws.cell(row=row, column=6, value=pct_global / 100)
+        pct_cell.number_format = '0%'
+        pct_cell.font = TOTAL_FONT
+        pct_cell.alignment = Alignment(horizontal="center")
+        for col in range(1, 8):
+            ws.cell(row=row, column=col).border = Border(top=Side(style="thin", color="283593"))
+        row += 2
+
+        # ── Sección 2: Detalle por Concepto ──
+        cell = ws.cell(row=row, column=1, value="DETALLE POR CONCEPTO")
+        cell.font = SUGERENCIA_FONT
+        for col in range(1, 10):
+            ws.cell(row=row, column=col).fill = SUGERENCIA_FILL
+        row += 1
+
+        det_headers = [
+            ("Fecha", 12), ("Emisor", 25), ("Concepto", 35), ("Clave SAT", 12),
+            ("Categoría", 22), ("Monto", 14), ("Deducible", 14),
+            ("%", 8), ("Fundamento", 28),
+        ]
+        for col_idx, (h, w) in enumerate(det_headers, 1):
+            cell = ws.cell(row=row, column=col_idx, value=h)
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center")
+            if col_idx > 7:
+                ws.column_dimensions[get_column_letter(col_idx)].width = w
+        row += 1
+
+        count = 0
+        for comp in recibidas:
+            if not comp.conceptos:
+                continue
+            clasificaciones = clasificador.clasificar_comprobante(comp)
+            for clas in clasificaciones:
+                ws.cell(row=row, column=1, value=comp.fecha.strftime("%d/%m/%Y"))
+                ws.cell(row=row, column=2, value=(comp.nombre_emisor or comp.rfc_emisor)[:25])
+                ws.cell(row=row, column=3, value=clas.concepto_descripcion[:35])
+                ws.cell(row=row, column=4, value=clas.clave_prod_serv)
+                ws.cell(row=row, column=5, value=clas.categoria[:22])
+
+                for col, val in [(6, float(clas.monto_original)), (7, float(clas.monto_deducible))]:
+                    cell = ws.cell(row=row, column=col, value=val)
+                    cell.number_format = CURRENCY_FMT
+
+                pct_cell = ws.cell(row=row, column=8, value=clas.porcentaje_deducible / 100)
+                pct_cell.number_format = '0%'
+                pct_cell.alignment = Alignment(horizontal="center")
+
+                ws.cell(row=row, column=9, value=clas.fundamento_legal)
+
+                # Colorear según resultado
+                if not clas.es_deducible:
+                    for col in range(1, 10):
+                        ws.cell(row=row, column=col).fill = NO_DEDUCIBLE_FILL
+                elif clas.alertas:
+                    for col in range(1, 10):
+                        ws.cell(row=row, column=col).fill = ALERTA_FILL
+
+                row += 1
+                count += 1
+
+        # Nota al pie
+        row += 1
+        ws.cell(row=row, column=1, value=(
+            "Verde = 100% deducible | Amarillo = deducible con alertas | "
+            "Rosa = no deducible"
+        )).font = Font(italic=True, size=9, color="888888")
+        row += 1
+        ws.cell(row=row, column=1, value=(
+            "* Este análisis es educativo y no sustituye asesoría fiscal profesional."
+        )).font = Font(italic=True, size=9, color="888888")
+
+        ws.freeze_panes = "A2"
+
+    def _write_suggestions(self, ws, year: int):
+        """Escribe la pestaña de sugerencias de optimización fiscal."""
+        clasificador = ClasificadorDeducciones(self.regimen, self.db)
+        recibidas = self._get_recibidas_year(year)
+
+        # Título
+        title_cell = ws.cell(row=1, column=1, value=f"Sugerencias de Optimización Fiscal - {year}")
+        title_cell.font = Font(bold=True, size=16, color="283593")
+
+        if not recibidas:
+            ws.cell(row=3, column=1, value="Sin facturas recibidas para analizar.").font = Font(
+                italic=True, color="888888"
+            )
+            return
+
+        # Calcular ingresos anuales
+        ingresos = 0.0
+        for month in range(1, 13):
+            se = self.db.monthly_summary(year, month, "emitida")
+            ingresos += se["ingresos"]
+
+        sugerencias = clasificador.generar_sugerencias(recibidas, ingresos)
+
+        ws.column_dimensions["A"].width = 6
+        ws.column_dimensions["B"].width = 40
+        ws.column_dimensions["C"].width = 80
+        ws.column_dimensions["D"].width = 18
+        ws.column_dimensions["E"].width = 14
+
+        # ── Resumen rápido ──
+        row = 3
+        resumen = clasificador.resumen_periodo(recibidas)
+
+        cell = ws.cell(row=row, column=1, value="RESUMEN FISCAL")
+        cell.font = SUGERENCIA_FONT
+        for col in range(1, 6):
+            ws.cell(row=row, column=col).fill = SUGERENCIA_FILL
+        row += 1
+
+        stats = [
+            ("Ingresos anuales (emitidas)", ingresos),
+            ("Total gastos (recibidas)", float(resumen["total_original"])),
+            ("Total deducible", float(resumen["total_deducible"])),
+            ("Total NO deducible", float(resumen["total_no_deducible"])),
+        ]
+        for label, val in stats:
+            ws.cell(row=row, column=2, value=label).font = Font(bold=True)
+            cell = ws.cell(row=row, column=3, value=val)
+            cell.number_format = CURRENCY_FMT
+            row += 1
+
+        pct = resumen["porcentaje_global"]
+        ws.cell(row=row, column=2, value="Porcentaje deducible").font = Font(bold=True)
+        pct_cell = ws.cell(row=row, column=3, value=pct / 100)
+        pct_cell.number_format = '0.0%'
+        row += 1
+
+        if ingresos > 0:
+            tasa_efectiva = float(resumen["total_deducible"]) / ingresos
+            ws.cell(row=row, column=2, value="Deducciones / Ingresos").font = Font(bold=True)
+            cell = ws.cell(row=row, column=3, value=tasa_efectiva)
+            cell.number_format = '0.0%'
+            row += 1
+
+        row += 1
+
+        # ── Tabla de sugerencias ──
+        cell = ws.cell(row=row, column=1, value="SUGERENCIAS DE OPTIMIZACIÓN")
+        cell.font = SUGERENCIA_FONT
+        for col in range(1, 6):
+            ws.cell(row=row, column=col).fill = SUGERENCIA_FILL
+        row += 1
+
+        sug_headers = [("#", 6), ("Título", 40), ("Descripción", 80), ("Ahorro Estimado", 18), ("Prioridad", 14)]
+        for col_idx, (h, _) in enumerate(sug_headers, 1):
+            cell = ws.cell(row=row, column=col_idx, value=h)
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="center")
+        row += 1
+
+        if not sugerencias:
+            ws.cell(row=row, column=2, value="No se encontraron sugerencias adicionales.").font = Font(
+                italic=True, color="888888"
+            )
+            row += 1
+        else:
+            for i, sug in enumerate(sugerencias, 1):
+                ws.cell(row=row, column=1, value=i).alignment = Alignment(horizontal="center")
+                ws.cell(row=row, column=2, value=sug.titulo).font = Font(bold=True)
+
+                # Descripción con wrap
+                desc_cell = ws.cell(row=row, column=3, value=sug.descripcion)
+                desc_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+                if sug.ahorro_estimado:
+                    cell = ws.cell(row=row, column=4, value=float(sug.ahorro_estimado))
+                    cell.number_format = CURRENCY_FMT
+                    cell.font = FISCAL_GREEN
+
+                prioridad_labels = {1: "Alta", 2: "Media", 3: "Baja"}
+                prio_cell = ws.cell(row=row, column=5, value=prioridad_labels.get(sug.prioridad, ""))
+                prio_cell.alignment = Alignment(horizontal="center")
+                if sug.prioridad == 1:
+                    prio_cell.font = FISCAL_RED
+                elif sug.prioridad == 2:
+                    prio_cell.font = FISCAL_ORANGE
+
+                # Colorear fila por prioridad
+                if sug.prioridad == 1:
+                    for col in range(1, 6):
+                        ws.cell(row=row, column=col).fill = NO_DEDUCIBLE_FILL
+                elif sug.prioridad == 2:
+                    for col in range(1, 6):
+                        ws.cell(row=row, column=col).fill = ALERTA_FILL
+
+                row += 1
+
+        # ── Alertas del análisis ──
+        if resumen["alertas"]:
+            row += 1
+            cell = ws.cell(row=row, column=1, value="ALERTAS DETECTADAS")
+            cell.font = Font(bold=True, size=12, color="C62828")
+            for col in range(1, 6):
+                ws.cell(row=row, column=col).fill = NO_DEDUCIBLE_FILL
+            row += 1
+
+            for alerta in resumen["alertas"]:
+                ws.cell(row=row, column=2, value=alerta)
+                row += 1
+
+        # Nota al pie
+        row += 2
+        ws.cell(row=row, column=1, value=(
+            "* Estas sugerencias son educativas y no sustituyen asesoría fiscal profesional."
+        )).font = Font(italic=True, size=9, color="888888")
+        row += 1
+        ws.cell(row=row, column=1, value=(
+            "* Los ahorros estimados se calculan asumiendo una tasa marginal de ISR del 30%."
         )).font = Font(italic=True, size=9, color="888888")
 
         ws.freeze_panes = "A2"

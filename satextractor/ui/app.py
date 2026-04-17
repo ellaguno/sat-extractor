@@ -29,7 +29,10 @@ class App:
         self.conn = get_connection(db_path)
         self.db = Repository(self.conn)
         self.config = config
-        self.exporter = ExcelExporter(self.db)
+        regimen = "612"
+        if config and config.contribuyente:
+            regimen = config.contribuyente.regimen
+        self.exporter = ExcelExporter(self.db, regimen=regimen)
 
     def run(self):
         console.clear()
