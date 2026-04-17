@@ -179,6 +179,9 @@ def calcular_impuestos_mensuales(
             iva_comp = float(comp.iva_trasladado) if comp.iva_trasladado else 0.0
             subtotal_comp = float(comp.subtotal) if comp.subtotal else 0.0
 
+            # Nota de crédito (E) recibida = te devuelven dinero → resta gastos
+            signo = -1.0 if comp.tipo_comprobante == "E" else 1.0
+
             if comp.conceptos:
                 total_deducible = Decimal("0")
                 total_original = Decimal("0")
@@ -191,12 +194,12 @@ def calcular_impuestos_mensuales(
                     float(total_deducible / total_original)
                     if total_original > 0 else 0.0
                 )
-                deducciones_mes += float(total_deducible)
-                deducciones_brutas += float(total_original)
-                deducciones_no_ded += float(total_original - total_deducible)
-                iva_acreditable += iva_comp * pct_deducible
+                deducciones_mes += float(total_deducible) * signo
+                deducciones_brutas += float(total_original) * signo
+                deducciones_no_ded += float(total_original - total_deducible) * signo
+                iva_acreditable += iva_comp * pct_deducible * signo
             else:
-                deducciones_brutas += subtotal_comp
+                deducciones_brutas += subtotal_comp * signo
 
         # ── IVA a pagar ──
         if tipo == "plataformas":

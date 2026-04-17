@@ -586,15 +586,19 @@ class FiscalClasificacionScreen(BackScreen):
         for comp in recibidas:
             if not comp.conceptos:
                 continue
+            # Nota de crédito (E) recibida = devuelción, resta gastos
+            signo = -1.0 if comp.tipo_comprobante == "E" else 1.0
             clasificaciones = clasificador.clasificar_comprobante(comp)
             for clas in clasificaciones:
                 i += 1
-                monto_orig = float(clas.monto_original)
-                monto_ded = float(clas.monto_deducible)
+                monto_orig = float(clas.monto_original) * signo
+                monto_ded = float(clas.monto_deducible) * signo
                 total_original += monto_orig
                 total_deducible += monto_ded
 
-                if not clas.es_deducible:
+                if comp.tipo_comprobante == "E":
+                    indicator = "NC"
+                elif not clas.es_deducible:
                     indicator = "X"
                 elif clas.alertas:
                     indicator = "!"
@@ -626,7 +630,7 @@ class FiscalClasificacionScreen(BackScreen):
             f"\nDeducible:     {_fmt(total_deducible)}  ({pct:.0f}%)\n"
             f"No deducible:  {_fmt(no_ded)}\n"
             f"{i} conceptos analizados\n"
-            "V=deducible  !=alertas  X=no deducible"
+            "V=deducible  !=alertas  X=no deducible  NC=nota de crédito"
         )
 
     @on(DataTable.RowSelected, "#fiscal-table")

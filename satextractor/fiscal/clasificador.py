@@ -189,6 +189,8 @@ class ClasificadorDeducciones:
         num_no_clasificados = 0
 
         for comp in comprobantes:
+            # Nota de crédito (E) recibida = devolución, resta gastos
+            signo = Decimal("-1") if comp.tipo_comprobante == "E" else Decimal("1")
             for concepto in comp.conceptos:
                 resultado = self.clasificar_concepto(concepto, comp)
                 cat = resultado.categoria
@@ -203,13 +205,13 @@ class ClasificadorDeducciones:
                         "alertas": [],
                     }
 
-                por_categoria[cat]["monto_original"] += resultado.monto_original
-                por_categoria[cat]["monto_deducible"] += resultado.monto_deducible
+                por_categoria[cat]["monto_original"] += resultado.monto_original * signo
+                por_categoria[cat]["monto_deducible"] += resultado.monto_deducible * signo
                 por_categoria[cat]["num_conceptos"] += 1
                 por_categoria[cat]["alertas"].extend(resultado.alertas)
 
-                total_original += resultado.monto_original
-                total_deducible += resultado.monto_deducible
+                total_original += resultado.monto_original * signo
+                total_deducible += resultado.monto_deducible * signo
                 todas_alertas.extend(resultado.alertas)
 
                 if resultado.confianza < 0.5:
