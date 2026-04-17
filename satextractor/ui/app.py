@@ -473,11 +473,11 @@ class App:
         console.print()
         console.print("[dim]Acciones:[/dim]")
         if cfdi.estado == "Vigente":
-            console.print("  [c] Marcar como Cancelado")
+            console.print("  \\[c] Marcar como Cancelado")
         else:
-            console.print("  [v] Marcar como Vigente")
-        console.print("  [x] Eliminar de la base de datos")
-        console.print("  [Enter] Volver")
+            console.print("  \\[v] Marcar como Vigente")
+        console.print("  \\[x] Eliminar de la base de datos")
+        console.print("  \\[Enter] Volver")
 
         action = Prompt.ask("Acción", default="")
         action = action.strip().lower()
