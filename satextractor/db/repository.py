@@ -209,6 +209,24 @@ class Repository:
     def annual_summary(self, year: int, tipo: str | None = None) -> list[dict]:
         return [self.monthly_summary(year, m, tipo) for m in range(1, 13)]
 
+    def update_estado(self, uuid: str, estado: str) -> bool:
+        """Actualiza el estado de un CFDI (Vigente/Cancelado)."""
+        cursor = self.conn.execute(
+            "UPDATE comprobantes SET estado = ? WHERE uuid = ?",
+            (estado, uuid),
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_comprobante(self, uuid: str) -> bool:
+        """Elimina un CFDI y sus conceptos de la base de datos."""
+        self.conn.execute("DELETE FROM conceptos WHERE uuid = ?", (uuid,))
+        cursor = self.conn.execute(
+            "DELETE FROM comprobantes WHERE uuid = ?", (uuid,)
+        )
+        self.conn.commit()
+        return cursor.rowcount > 0
+
     def mark_downloaded(
         self, start: date, end: date, tipo: str,
         id_solicitud: str, num_cfdis: int, status: str = "ok",

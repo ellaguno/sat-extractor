@@ -469,6 +469,42 @@ class App:
         else:
             console.print("[dim]  (Sin conceptos - datos de Metadata)[/dim]")
 
+        # Acciones sobre el CFDI
+        console.print()
+        console.print("[dim]Acciones:[/dim]")
+        if cfdi.estado == "Vigente":
+            console.print("  [c] Marcar como Cancelado")
+        else:
+            console.print("  [v] Marcar como Vigente")
+        console.print("  [x] Eliminar de la base de datos")
+        console.print("  [Enter] Volver")
+
+        action = Prompt.ask("Acción", default="")
+        action = action.strip().lower()
+
+        if action == "c" and cfdi.estado == "Vigente":
+            if Confirm.ask(
+                f"¿Marcar CFDI {cfdi.uuid[:8]}... como [red]Cancelado[/red]?",
+                default=False,
+            ):
+                self.db.update_estado(cfdi.uuid, "Cancelado")
+                console.print("[red]CFDI marcado como Cancelado.[/red]")
+        elif action == "v" and cfdi.estado != "Vigente":
+            if Confirm.ask(
+                f"¿Marcar CFDI {cfdi.uuid[:8]}... como [green]Vigente[/green]?",
+                default=False,
+            ):
+                self.db.update_estado(cfdi.uuid, "Vigente")
+                console.print("[green]CFDI marcado como Vigente.[/green]")
+        elif action == "x":
+            console.print(
+                f"[bold red]Esto eliminará permanentemente el CFDI "
+                f"{cfdi.uuid[:8]}... (${float(cfdi.total):,.2f})[/bold red]"
+            )
+            if Confirm.ask("¿Estás seguro?", default=False):
+                self.db.delete_comprobante(cfdi.uuid)
+                console.print("[red]CFDI eliminado.[/red]")
+
     def _view_top_entities(self):
         year = IntPrompt.ask("Año", default=CURRENT_YEAR)
         fecha_inicio = date(year, 1, 1)
