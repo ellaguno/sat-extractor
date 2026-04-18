@@ -35,6 +35,7 @@ class ExportConfig:
 
 @dataclass
 class ContribuyenteConfig:
+    nombre: str = ""  # Nombre o razón social del contribuyente
     regimen: str = "612"
     actividad: str = ""
     coeficiente_utilidad: float = 0.0  # Solo PM 601 (ejercicio anterior)
@@ -91,6 +92,7 @@ class Config:
                 output_dir=Path(export.get("output_dir", "~/reportes_sat")).expanduser(),
             ),
             contribuyente=ContribuyenteConfig(
+                nombre=contrib.get("nombre", ""),
                 regimen=contrib.get("regimen", "612"),
                 actividad=contrib.get("actividad", ""),
                 coeficiente_utilidad=float(contrib.get("coeficiente_utilidad", 0.0)),
@@ -142,6 +144,8 @@ class Config:
 
         # [contribuyente]
         lines.append("[contribuyente]")
+        if self.contribuyente.nombre:
+            lines.append(f'nombre = "{self.contribuyente.nombre}"')
         lines.append(f'regimen = "{self.contribuyente.regimen}"')
         if self.contribuyente.actividad:
             lines.append(f'actividad = "{self.contribuyente.actividad}"')

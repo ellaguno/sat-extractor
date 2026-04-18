@@ -17,8 +17,6 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    LoadingIndicator,
-    OptionList,
     Select,
     Static,
     TabbedContent,
@@ -65,218 +63,6 @@ class BackScreen(Screen):
         self.app.pop_screen()
 
 
-class DashboardScreen(BackScreen):
-    """Dashboard anual con resumen mensual."""
-
-    def __init__(self, db: Repository, config, year: int):
-        super().__init__()
-        self.db = db
-        self.config = config
-        self.year = year
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(f"[bold blue]Dashboard {self.year}[/bold blue]", id="dash-title"),
-            DataTable(id="dash-table"),
-            Static(id="dash-notes"),
-            id="dash-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self._load_data()
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-        fiscal = calcular_impuestos_mensuales(self.db, self.year, regimen, config=self.config)
-
-        table = self.query_one("#dash-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-
-        cols = [
-            ("Mes", 12), ("Emitidas", 10), ("Facturado", 16),
-            ("Recibidas", 10), ("Gastos", 16), ("IVA x Pagar", 14),
-            ("ISR Prov.", 14), ("Balance", 16),
-        ]
-        for label, _w in cols:
-            table.add_column(label, key=label)
-
-        grand_emi = grand_rec = grand_iva = grand_isr = 0.0
-
-        for month in range(1, 13):
-            se = self.db.monthly_summary(self.year, month, "emitida")
-            sr = self.db.monthly_summary(self.year, month, "recibida")
-            fi = fiscal[month - 1]
-
-            total_emi = se["total"]
-            total_rec = sr["total"]
-            iva_pagar = fi["iva_a_pagar"]
-            isr_prov = fi["isr_provisional"]
-            balance = total_emi - total_rec
-
-            grand_emi += total_emi
-            grand_rec += total_rec
-            grand_iva += iva_pagar
-            grand_isr += isr_prov
-
-            n_total = se["num_cfdis"] + sr["num_cfdis"]
-
-            table.add_row(
-                MESES[month],
-                str(se["num_cfdis"]) if se["num_cfdis"] else "-",
-                _fmt(total_emi) if total_emi else "$0.00",
-                str(sr["num_cfdis"]) if sr["num_cfdis"] else "-",
-                _fmt(total_rec) if total_rec else "$0.00",
-                _fmt(iva_pagar) if n_total else "-",
-                _fmt(isr_prov) if n_total else "-",
-                _fmt(balance) if n_total else "-",
-            )
-
-        grand_balance = grand_emi - grand_rec
-        table.add_row(
-            "TOTAL", "",
-            _fmt(grand_emi), "",
-            _fmt(grand_rec),
-            _fmt(grand_iva),
-            _fmt(grand_isr),
-            _fmt(grand_balance),
-        )
-
-        notes = self.query_one("#dash-notes", Static)
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-        notes.update(
-            "* IVA x Pagar = IVA cobrado - IVA acreditable - IVA retenido\n"
-            f"* {isr_label(regimen)}\n"
-            "* No incluye depreciaciones ni pérdidas de ejercicios anteriores\n"
-            "[dim]Selecciona un mes para ver el detalle[/dim]"
-        )
-
-    @on(DataTable.RowSelected, "#dash-table")
-    def on_row_selected(self, event: DataTable.RowSelected) -> None:
-        row_index = event.cursor_row
-        if 0 <= row_index <= 11:  # Meses 1-12, ignorar fila TOTAL
-            month = row_index + 1
-            self.app.push_screen(MonthDetailScreen(self.db, self.year, month))
-
-
-class MonthDetailScreen(BackScreen):
-    """Detalle de un mes: emitidas y recibidas."""
-
-    def __init__(self, db: Repository, year: int, month: int):
-        super().__init__()
-        self.db = db
-        self.year = year
-        self.month = month
-        self._uuids_emitidas: list[str] = []
-        self._uuids_recibidas: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(
-                f"[bold blue]{MESES[self.month]} {self.year}[/bold blue]",
-                id="month-title",
-            ),
-            Static(id="month-summary"),
-            DataTable(id="month-emitidas"),
-            DataTable(id="month-recibidas"),
-            id="month-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self._load_data()
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        fecha_inicio = date(self.year, self.month, 1)
-        fecha_fin = _next_month(self.year, self.month)
-
-        se = self.db.monthly_summary(self.year, self.month, "emitida")
-        sr = self.db.monthly_summary(self.year, self.month, "recibida")
-
-        summary = self.query_one("#month-summary", Static)
-        summary.update(
-            f"Emitidas: {se['num_cfdis']} CFDIs  {_fmt(se['total'])}    "
-            f"Recibidas: {sr['num_cfdis']} CFDIs  {_fmt(sr['total'])}\n"
-            "[dim]Selecciona un CFDI para ver su detalle[/dim]"
-        )
-
-        # Emitidas
-        emitidas = self.db.search(
-            tipo="emitida", fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, limit=500,
-        )
-        self._uuids_emitidas = [c.uuid for c in emitidas]
-        self._fill_cfdi_table("#month-emitidas", emitidas, "Emitidas")
-
-        # Recibidas
-        recibidas = self.db.search(
-            tipo="recibida", fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, limit=500,
-        )
-        self._uuids_recibidas = [c.uuid for c in recibidas]
-        self._fill_cfdi_table("#month-recibidas", recibidas, "Recibidas")
-
-    def _fill_cfdi_table(self, table_id: str, cfdis: list, label: str) -> None:
-        table = self.query_one(table_id, DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-
-        for col in ["#", "Fecha", "Contraparte", "Concepto", "Total", "Estado", "UUID"]:
-            table.add_column(col, key=col)
-
-        if not cfdis:
-            table.add_row("-", "-", f"Sin {label.lower()}", "-", "-", "-", "-")
-            return
-
-        total_monto = 0.0
-        for i, c in enumerate(cfdis, 1):
-            contraparte = (
-                c.nombre_receptor or c.rfc_receptor
-                if c.tipo == "emitida"
-                else c.nombre_emisor or c.rfc_emisor
-            )
-            concepto = ""
-            if c.conceptos:
-                concepto = c.conceptos[0].descripcion
-                if len(c.conceptos) > 1:
-                    concepto += f" (+{len(c.conceptos) - 1})"
-
-            monto = float(c.total) if c.total else 0
-            total_monto += monto
-
-            table.add_row(
-                str(i),
-                c.fecha.strftime("%d/%m/%Y"),
-                (contraparte or "")[:30],
-                concepto[:35],
-                _fmt(monto),
-                c.estado[:3],
-                c.uuid[:8],
-            )
-
-        table.add_row(
-            "", "", "", f"{len(cfdis)} CFDIs",
-            _fmt(total_monto), "", "",
-        )
-
-    @on(DataTable.RowSelected, "#month-emitidas")
-    def on_emitida_selected(self, event: DataTable.RowSelected) -> None:
-        idx = event.cursor_row
-        if 0 <= idx < len(self._uuids_emitidas):
-            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids_emitidas[idx]))
-
-    @on(DataTable.RowSelected, "#month-recibidas")
-    def on_recibida_selected(self, event: DataTable.RowSelected) -> None:
-        idx = event.cursor_row
-        if 0 <= idx < len(self._uuids_recibidas):
-            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids_recibidas[idx]))
 
 
 class CfdiDetailScreen(BackScreen):
@@ -353,622 +139,8 @@ class CfdiDetailScreen(BackScreen):
             table.add_row("-", "-", "(Sin conceptos - datos de Metadata)", "-", "-", "-")
 
 
-class SearchScreen(BackScreen):
-    """Buscar CFDIs por RFC o nombre."""
 
-    def __init__(self, db: Repository):
-        super().__init__()
-        self.db = db
-        self._uuids: list[str] = []
 
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Vertical(
-            Static("[bold]Buscar CFDIs[/bold]"),
-            Input(placeholder="RFC o nombre (mín. 3 caracteres)", id="search-input"),
-            Static(id="search-status"),
-            DataTable(id="search-results"),
-            id="search-container",
-        )
-        yield Footer()
-
-    @on(Input.Submitted, "#search-input")
-    def do_search(self, event: Input.Submitted) -> None:
-        query = event.value.strip()
-        if len(query) < 3:
-            self.query_one("#search-status", Static).update(
-                "[yellow]Ingresa al menos 3 caracteres.[/yellow]"
-            )
-            return
-        self._run_search(query)
-
-    @work(thread=True)
-    def _run_search(self, query: str) -> None:
-        results = self.db.search(rfc=query.upper(), limit=50)
-        if not results:
-            # Buscar por nombre
-            conn = self.db.conn
-            rows = conn.execute(
-                """SELECT * FROM comprobantes
-                   WHERE nombre_emisor LIKE ? OR nombre_receptor LIKE ?
-                   ORDER BY fecha DESC LIMIT 50""",
-                (f"%{query}%", f"%{query}%"),
-            ).fetchall()
-            from ..db.repository import _row_to_comprobante
-            results = [_row_to_comprobante(r) for r in rows]
-
-        status = self.query_one("#search-status", Static)
-        table = self.query_one("#search-results", DataTable)
-        table.clear(columns=True)
-        self._uuids = []
-
-        if not results:
-            status.update("[yellow]No se encontraron resultados.[/yellow]")
-            return
-
-        status.update(f"[green]{len(results)} resultado(s)[/green]")
-        table.cursor_type = "row"
-
-        for col in ["#", "Fecha", "Tipo", "Contraparte", "Concepto", "Total", "UUID"]:
-            table.add_column(col, key=col)
-
-        self._uuids = [c.uuid for c in results]
-        for i, c in enumerate(results, 1):
-            contraparte = (
-                c.nombre_receptor or c.rfc_receptor
-                if c.tipo == "emitida"
-                else c.nombre_emisor or c.rfc_emisor
-            )
-            concepto = ""
-            if c.conceptos:
-                concepto = c.conceptos[0].descripcion[:30]
-            monto = float(c.total) if c.total else 0
-            table.add_row(
-                str(i),
-                c.fecha.strftime("%d/%m"),
-                c.tipo[:3].upper(),
-                (contraparte or "")[:28],
-                concepto,
-                _fmt(monto),
-                c.uuid[:8],
-            )
-
-    @on(DataTable.RowSelected, "#search-results")
-    def on_result_selected(self, event: DataTable.RowSelected) -> None:
-        idx = event.cursor_row
-        if 0 <= idx < len(self._uuids):
-            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids[idx]))
-
-
-class TopEntitiesScreen(BackScreen):
-    """Top emisores y receptores."""
-
-    def __init__(self, db: Repository, year: int):
-        super().__init__()
-        self.db = db
-        self.year = year
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(f"[bold blue]Top Entidades - {self.year}[/bold blue]"),
-            DataTable(id="top-proveedores"),
-            DataTable(id="top-clientes"),
-            id="top-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self._load_data()
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        fecha_inicio = date(self.year, 1, 1)
-        fecha_fin = date(self.year + 1, 1, 1)
-        conn = self.db.conn
-
-        # Top proveedores
-        rows = conn.execute(
-            """SELECT rfc_emisor, nombre_emisor, COUNT(*) as n, SUM(total) as total
-               FROM comprobantes
-               WHERE tipo = 'recibida' AND fecha >= ? AND fecha < ?
-               GROUP BY rfc_emisor ORDER BY total DESC LIMIT 15""",
-            (fecha_inicio.isoformat(), fecha_fin.isoformat()),
-        ).fetchall()
-
-        t_prov = self.query_one("#top-proveedores", DataTable)
-        t_prov.cursor_type = "row"
-        t_prov.zebra_stripes = True
-        for col in ["#", "RFC", "Nombre", "CFDIs", "Total"]:
-            t_prov.add_column(col, key=col)
-        for i, r in enumerate(rows, 1):
-            t_prov.add_row(
-                str(i), r["rfc_emisor"], (r["nombre_emisor"] or "")[:35],
-                str(r["n"]), _fmt(r["total"]),
-            )
-
-        # Top clientes
-        rows = conn.execute(
-            """SELECT rfc_receptor, nombre_receptor, COUNT(*) as n, SUM(total) as total
-               FROM comprobantes
-               WHERE tipo = 'emitida' AND fecha >= ? AND fecha < ?
-               GROUP BY rfc_receptor ORDER BY total DESC LIMIT 15""",
-            (fecha_inicio.isoformat(), fecha_fin.isoformat()),
-        ).fetchall()
-
-        t_cli = self.query_one("#top-clientes", DataTable)
-        t_cli.cursor_type = "row"
-        t_cli.zebra_stripes = True
-        for col in ["#", "RFC", "Nombre", "CFDIs", "Total"]:
-            t_cli.add_column(col, key=f"c_{col}")
-        for i, r in enumerate(rows, 1):
-            t_cli.add_row(
-                str(i), r["rfc_receptor"], (r["nombre_receptor"] or "")[:35],
-                str(r["n"]), _fmt(r["total"]),
-            )
-
-
-class FiscalClasificacionScreen(BackScreen):
-    """Clasificación de deducciones por periodo."""
-
-    def __init__(self, db: Repository, config, year: int, month: int | None = None):
-        super().__init__()
-        self.db = db
-        self.config = config
-        self.year = year
-        self.month = month
-        self._uuids: list[str] = []
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(id="fiscal-title"),
-            Static(id="fiscal-loading", markup=True),
-            DataTable(id="fiscal-table"),
-            Static(id="fiscal-totals"),
-            id="fiscal-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        titulo = (
-            f"{MESES[self.month]} {self.year}" if self.month
-            else str(self.year)
-        )
-        self.query_one("#fiscal-title", Static).update(
-            f"[bold magenta]Deducciones - {titulo}[/bold magenta]"
-        )
-        self.query_one("#fiscal-loading", Static).update("Clasificando...")
-        self._load_data()
-
-    def _get_recibidas(self):
-        if self.month:
-            fecha_inicio = date(self.year, self.month, 1)
-            fecha_fin = _next_month(self.year, self.month)
-        else:
-            fecha_inicio = date(self.year, 1, 1)
-            fecha_fin = date(self.year + 1, 1, 1)
-
-        gastos = []
-        for tipo_comp in ("I", "E"):
-            gastos.extend(self.db.search(
-                tipo="recibida", tipo_comprobante=tipo_comp,
-                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
-                estado="Vigente", limit=5000,
-            ))
-        return gastos
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        recibidas = self._get_recibidas()
-        loading = self.query_one("#fiscal-loading", Static)
-
-        if not recibidas:
-            loading.update("[yellow]No hay facturas recibidas en este periodo.[/yellow]")
-            return
-
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-        clasificador = ClasificadorDeducciones(regimen, self.db)
-
-        table = self.query_one("#fiscal-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-
-        for col in ["#", "Fecha", "Concepto", "Categoría", "Monto", "Deducible", "%", ""]:
-            table.add_column(col, key=col)
-
-        total_original = 0.0
-        total_deducible = 0.0
-        i = 0
-
-        for comp in recibidas:
-            if not comp.conceptos:
-                continue
-            # Nota de crédito (E) recibida = devuelción, resta gastos
-            signo = -1.0 if comp.tipo_comprobante == "E" else 1.0
-            clasificaciones = clasificador.clasificar_comprobante(comp)
-            for clas in clasificaciones:
-                i += 1
-                monto_orig = float(clas.monto_original) * signo
-                monto_ded = float(clas.monto_deducible) * signo
-                total_original += monto_orig
-                total_deducible += monto_ded
-
-                if comp.tipo_comprobante == "E":
-                    indicator = "NC"
-                elif not clas.es_deducible:
-                    indicator = "X"
-                elif clas.alertas:
-                    indicator = "!"
-                else:
-                    indicator = "V"
-
-                table.add_row(
-                    str(i),
-                    comp.fecha.strftime("%d/%m"),
-                    clas.concepto_descripcion[:30],
-                    clas.categoria[:20],
-                    _fmt(monto_orig),
-                    _fmt(monto_ded),
-                    f"{clas.porcentaje_deducible:.0f}%",
-                    indicator,
-                )
-                self._uuids.append(comp.uuid)
-                if i >= 200:
-                    break
-            if i >= 200:
-                break
-
-        loading.update("")
-
-        pct = (total_deducible / total_original * 100) if total_original > 0 else 0
-        no_ded = total_original - total_deducible
-        totals = self.query_one("#fiscal-totals", Static)
-        totals.update(
-            f"\nDeducible:     {_fmt(total_deducible)}  ({pct:.0f}%)\n"
-            f"No deducible:  {_fmt(no_ded)}\n"
-            f"{i} conceptos analizados\n"
-            "V=deducible  !=alertas  X=no deducible  NC=nota de crédito"
-        )
-
-    @on(DataTable.RowSelected, "#fiscal-table")
-    def on_fiscal_row_selected(self, event: DataTable.RowSelected) -> None:
-        idx = event.cursor_row
-        if 0 <= idx < len(self._uuids):
-            self.app.push_screen(CfdiDetailScreen(self.db, self._uuids[idx]))
-
-
-class FiscalCategoriasScreen(BackScreen):
-    """Resumen de deducciones por categoría."""
-
-    def __init__(self, db: Repository, config, year: int):
-        super().__init__()
-        self.db = db
-        self.config = config
-        self.year = year
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(
-                f"[bold magenta]Deducciones por Categoría - {self.year}[/bold magenta]",
-                id="cat-title",
-            ),
-            Static(id="cat-loading"),
-            DataTable(id="cat-table"),
-            Static(id="cat-totals"),
-            Static(id="cat-alertas"),
-            id="cat-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self.query_one("#cat-loading", Static).update("Analizando...")
-        self._load_data()
-
-    def _get_recibidas(self):
-        fecha_inicio = date(self.year, 1, 1)
-        fecha_fin = date(self.year + 1, 1, 1)
-        gastos = []
-        for tipo_comp in ("I", "E"):
-            gastos.extend(self.db.search(
-                tipo="recibida", tipo_comprobante=tipo_comp,
-                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
-                estado="Vigente", limit=5000,
-            ))
-        return gastos
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        recibidas = self._get_recibidas()
-        loading = self.query_one("#cat-loading", Static)
-
-        if not recibidas:
-            loading.update("[yellow]No hay facturas recibidas.[/yellow]")
-            return
-
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-        clasificador = ClasificadorDeducciones(regimen, self.db)
-        resumen = clasificador.resumen_periodo(recibidas)
-
-        table = self.query_one("#cat-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-
-        for col in ["Categoría", "Conceptos", "Monto Total", "Deducible", "%", "Alertas"]:
-            table.add_column(col, key=col)
-
-        cats_sorted = sorted(
-            resumen["por_categoria"].items(),
-            key=lambda x: float(x[1]["monto_deducible"]),
-            reverse=True,
-        )
-
-        for cat_id, cat_data in cats_sorted:
-            monto_orig = float(cat_data["monto_original"])
-            monto_ded = float(cat_data["monto_deducible"])
-            pct = cat_data["porcentaje"]
-            n_alertas = len(cat_data["alertas"])
-
-            table.add_row(
-                cat_data["nombre"][:30],
-                str(cat_data["num_conceptos"]),
-                _fmt(monto_orig),
-                _fmt(monto_ded),
-                f"{pct:.0f}%",
-                str(n_alertas) if n_alertas else "-",
-            )
-
-        loading.update("")
-
-        total_orig = float(resumen["total_original"])
-        total_ded = float(resumen["total_deducible"])
-        total_no_ded = float(resumen["total_no_deducible"])
-        pct_global = resumen["porcentaje_global"]
-
-        totals = self.query_one("#cat-totals", Static)
-        totals.update(
-            f"\nTotal:         {_fmt(total_orig)}\n"
-            f"Deducible:     {_fmt(total_ded)}  ({pct_global:.0f}%)\n"
-            f"No deducible:  {_fmt(total_no_ded)}"
-        )
-
-        if resumen["alertas"]:
-            alertas_text = "Alertas:\n" + "\n".join(
-                f"  ! {a}" for a in resumen["alertas"][:5]
-            )
-            self.query_one("#cat-alertas", Static).update(alertas_text)
-
-
-class FiscalImpuestosScreen(BackScreen):
-    """ISR e IVA estimados a declarar."""
-
-    def __init__(self, db: Repository, config, year: int):
-        super().__init__()
-        self.db = db
-        self.config = config
-        self.year = year
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(
-                f"[bold magenta]Impuestos Provisionales - {self.year}[/bold magenta]",
-                id="imp-title",
-            ),
-            Static(id="imp-loading"),
-            DataTable(id="imp-table"),
-            Static(id="imp-detail"),
-            Static(id="imp-notes"),
-            id="imp-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self.query_one("#imp-loading", Static).update("Calculando...")
-        self._load_data()
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-        fiscal = calcular_impuestos_mensuales(self.db, self.year, regimen, config=self.config)
-
-        table = self.query_one("#imp-table", DataTable)
-        table.cursor_type = "row"
-        table.zebra_stripes = True
-
-        for col in ["Mes", "Ingresos", "Ded. Reales", "No Deducible",
-                     "IVA x Pagar", "ISR Prov.", "Total x Pagar"]:
-            table.add_column(col, key=col)
-
-        grand = {"ing": 0.0, "ded": 0.0, "no_ded": 0.0, "iva": 0.0, "isr": 0.0}
-
-        for fi in fiscal:
-            m = fi["mes"]
-            ingresos = fi["ingresos_mes"]
-            ded_reales = fi["deducciones_mes"]
-            no_ded = fi["deducciones_no_deducibles"]
-            iva_pagar = fi["iva_a_pagar"]
-            isr_prov = fi["isr_provisional"]
-            total_pagar = iva_pagar + isr_prov
-
-            grand["ing"] += ingresos
-            grand["ded"] += ded_reales
-            grand["no_ded"] += no_ded
-            grand["iva"] += iva_pagar
-            grand["isr"] += isr_prov
-
-            tiene_datos = ingresos > 0 or ded_reales > 0
-            if not tiene_datos:
-                table.add_row(MESES[m], "-", "-", "-", "-", "-", "-")
-                continue
-
-            table.add_row(
-                MESES[m],
-                _fmt(ingresos),
-                _fmt(ded_reales),
-                _fmt(no_ded),
-                _fmt(iva_pagar),
-                _fmt(isr_prov),
-                _fmt(total_pagar),
-            )
-
-        grand_total = grand["iva"] + grand["isr"]
-        table.add_row(
-            "TOTAL",
-            _fmt(grand["ing"]),
-            _fmt(grand["ded"]),
-            _fmt(grand["no_ded"]),
-            _fmt(grand["iva"]),
-            _fmt(grand["isr"]),
-            _fmt(grand_total),
-        )
-
-        self.query_one("#imp-loading", Static).update("")
-
-        # Detalle del último mes con datos
-        last_fi = None
-        for fi in reversed(fiscal):
-            if fi["ingresos_mes"] > 0 or fi["deducciones_mes"] > 0:
-                last_fi = fi
-                break
-
-        if last_fi:
-            m = last_fi["mes"]
-            detail = (
-                f"\nDetalle {MESES[m]} {self.year}:\n"
-                f"  IVA cobrado:            {_fmt(last_fi['iva_cobrado']):>14}\n"
-                f"  IVA acreditable:        {_fmt(last_fi['iva_acreditable']):>14}  (solo de gastos deducibles)\n"
-                f"  IVA retenido:           {_fmt(last_fi['iva_retenido']):>14}\n"
-                f"  IVA a pagar:            {_fmt(last_fi['iva_a_pagar']):>14}\n"
-                f"\n"
-                f"  Ingresos acumulados:    {_fmt(last_fi['ingresos_acum']):>14}\n"
-                f"  Deducciones acumuladas: {_fmt(last_fi['deducciones_acum']):>14}  (solo deducibles)\n"
-                f"  Base gravable:          {_fmt(last_fi['base_gravable']):>14}\n"
-                f"  ISR s/tarifa Art.96:    {_fmt(last_fi['isr_tarifa']):>14}\n"
-                f"  ISR retenido acum.:     {_fmt(last_fi['isr_retenido_acum']):>14}\n"
-                f"  Pagos prov. anteriores: {_fmt(last_fi['pagos_prov_anteriores']):>14}\n"
-                f"  ISR provisional:        {_fmt(last_fi['isr_provisional']):>14}\n"
-            )
-            self.query_one("#imp-detail", Static).update(detail)
-
-        self.query_one("#imp-notes", Static).update(
-            "\n* IVA acreditable = solo IVA de gastos clasificados como deducibles\n"
-            "* ISR = Art.96 LISR sobre (ingresos acum. - deducciones reales acum.)\n"
-            "* No incluye depreciaciones de inversiones, PTU ni pérdidas anteriores\n"
-            "* Estimado educativo - no sustituye asesoría fiscal profesional"
-        )
-
-
-class FiscalSugerenciasScreen(BackScreen):
-    """Sugerencias de optimización fiscal."""
-
-    def __init__(self, db: Repository, config, year: int):
-        super().__init__()
-        self.db = db
-        self.config = config
-        self.year = year
-
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield VerticalScroll(
-            Static(
-                f"[bold magenta]Sugerencias de Optimización - {self.year}[/bold magenta]"
-            ),
-            Static(id="sug-loading"),
-            Static(id="sug-content"),
-            id="sug-scroll",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self.query_one("#sug-loading", Static).update("Analizando...")
-        self._load_data()
-
-    def _get_recibidas(self):
-        fecha_inicio = date(self.year, 1, 1)
-        fecha_fin = date(self.year + 1, 1, 1)
-        gastos = []
-        for tipo_comp in ("I", "E"):
-            gastos.extend(self.db.search(
-                tipo="recibida", tipo_comprobante=tipo_comp,
-                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
-                estado="Vigente", limit=5000,
-            ))
-        return gastos
-
-    @work(thread=True)
-    def _load_data(self) -> None:
-        recibidas = self._get_recibidas()
-        loading = self.query_one("#sug-loading", Static)
-
-        if not recibidas:
-            loading.update("[yellow]No hay facturas para analizar.[/yellow]")
-            return
-
-        # Calcular ingresos anuales
-        ingresos = 0.0
-        for month in range(1, 13):
-            se = self.db.monthly_summary(self.year, month, "emitida")
-            ingresos += se["ingresos"]
-
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-        clasificador = ClasificadorDeducciones(regimen, self.db)
-
-        sugerencias = clasificador.generar_sugerencias(recibidas, ingresos)
-
-        # IA opcional
-        if self.config and self.config.ia and self.config.ia.api_key:
-            try:
-                from ..fiscal.ia_fiscal import AsistenteFiscal
-                asistente = AsistenteFiscal(
-                    api_key=self.config.ia.api_key,
-                    regimen=regimen,
-                    actividad=(
-                        self.config.contribuyente.actividad
-                        if self.config.contribuyente else ""
-                    ),
-                    model=self.config.ia.model,
-                    provider=self.config.ia.provider,
-                    base_url=self.config.ia.base_url,
-                )
-                resumen = clasificador.resumen_periodo(recibidas)
-                ia_sugerencias = asistente.generar_sugerencias(resumen, ingresos)
-                sugerencias.extend(ia_sugerencias)
-            except Exception:
-                pass
-
-        loading.update("")
-
-        if not sugerencias:
-            self.query_one("#sug-content", Static).update(
-                "[green]No se encontraron sugerencias adicionales.[/green]"
-            )
-            return
-
-        lines = []
-        for i, sug in enumerate(sugerencias, 1):
-            prioridad_icon = {1: "!!!", 2: "!!", 3: "!"}.get(sug.prioridad, "")
-            ahorro = ""
-            if sug.ahorro_estimado:
-                ahorro = f"  (ahorro estimado: {_fmt(float(sug.ahorro_estimado))})"
-            lines.append(f"{prioridad_icon} {i}. {sug.titulo}")
-            lines.append(f"   {sug.descripcion}{ahorro}")
-            lines.append("")
-
-        lines.append(
-            "* Estas sugerencias son educativas y no sustituyen "
-            "asesoría fiscal profesional."
-        )
-        self.query_one("#sug-content", Static).update("\n".join(lines))
 
 
 class FiscalCfdiScreen(BackScreen):
@@ -1279,6 +451,12 @@ class ConfigScreen(Screen):
 
             with TabbedContent():
                 with TabPane("Contribuyente", id="tab-contrib"):
+                    yield Static("Nombre / Razón social:", classes="config-label")
+                    yield Input(
+                        value=cfg.contribuyente.nombre if cfg.contribuyente else "",
+                        placeholder="Ej: Juan Pérez López",
+                        id="cfg-nombre",
+                    )
                     yield Static("Régimen fiscal:", classes="config-label")
                     yield Select(
                         reg_options,
@@ -1429,6 +607,7 @@ class ConfigScreen(Screen):
                     output_dir=Path(self.query_one("#cfg-export-dir", Input).value.strip() or "~/reportes_sat").expanduser(),
                 ),
                 contribuyente=ContribuyenteConfig(
+                    nombre=self.query_one("#cfg-nombre", Input).value.strip(),
                     regimen=str(regimen),
                     actividad=self.query_one("#cfg-actividad", Input).value.strip(),
                     coeficiente_utilidad=coeficiente,
@@ -1481,21 +660,42 @@ class SATExtractorApp(App):
         background: $surface;
     }
 
-    #main-menu {
+    #info-bar {
         width: 100%;
-        height: 100%;
-        padding: 1;
+        height: 1;
+        padding: 0 1;
+        background: $primary-background;
+        color: $text;
     }
 
-    #stats {
-        margin-bottom: 1;
-        text-style: italic;
+    #menu-bar {
+        width: 100%;
+        height: 1;
+        padding: 0;
+        background: $panel;
+    }
+
+    .menu-btn {
+        min-width: 8;
+        height: 1;
+        margin: 0;
+        padding: 0 1;
+        border: none;
+    }
+
+    #content-scroll {
+        height: 1fr;
+    }
+
+    #content-title {
+        margin: 0 1;
+        text-style: bold;
+        color: $accent;
+    }
+
+    #content-notes {
         color: $text-muted;
-    }
-
-    #main-options {
-        height: auto;
-        max-height: 60%;
+        margin: 0 1;
     }
 
     #status-bar {
@@ -1522,11 +722,20 @@ class SATExtractorApp(App):
     DataTable {
         height: auto;
         max-height: 80%;
-        margin: 1 0;
+        margin: 0 1;
     }
 
     VerticalScroll {
         height: 100%;
+    }
+
+    .inline-input {
+        margin: 0 1;
+    }
+
+    .inline-label {
+        margin: 0 1;
+        color: $text-muted;
     }
     """
 
@@ -1541,6 +750,14 @@ class SATExtractorApp(App):
         Binding("e", "export", "Excel"),
         Binding("f", "fiscal", "Fiscal"),
         Binding("c", "config", "Config"),
+        Binding("left", "menu_prev", "←", show=False),
+        Binding("right", "menu_next", "→", show=False),
+    ]
+
+    _MENU_IDS = [
+        "btn-dashboard", "btn-month", "btn-search", "btn-top",
+        "btn-export", "btn-fiscal", "btn-download", "btn-import",
+        "btn-config", "btn-quit",
     ]
 
     def __init__(self, db_path: Path, config=None):
@@ -1552,93 +769,851 @@ class SATExtractorApp(App):
         if config and config.contribuyente:
             regimen = config.contribuyente.regimen
         self.exporter = ExcelExporter(self.db, regimen=regimen, config=config)
+        self._current_view = None  # track active view for row handlers
+        self._view_year = CURRENT_YEAR
+        self._month_uuids_emi: list[str] = []
+        self._month_uuids_rec: list[str] = []
+        self._search_uuids: list[str] = []
+        self._fiscal_uuids: list[str] = []
 
-    def compose(self) -> ComposeResult:
-        yield Header()
-        yield Vertical(
-            Static(id="stats"),
-            OptionList(
-                "  [d] Dashboard anual",
-                "  [m] Detalle mensual",
-                "  [b] Buscar por RFC o nombre",
-                "  [t] Top emisores / receptores",
-                "  [e] Exportar a Excel",
-                "  [f] Análisis Fiscal Inteligente",
-                "  ────────────────────────────────",
-                "  [1] Descargar CFDIs del SAT",
-                "  [2] Importar XMLs desde directorio",
-                "  [c] Configuración",
-                "  ────────────────────────────────",
-                "  [q] Salir",
-                id="main-options",
-            ),
-            Static(id="status-bar"),
-            id="main-menu",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        self._refresh_stats()
-
-    def _refresh_stats(self) -> None:
+    def _build_info_text(self) -> str:
+        """Construye la línea de info: nombre │ RFC │ fecha │ BD stats."""
+        parts = []
+        if self.config:
+            nombre = self.config.contribuyente.nombre if self.config.contribuyente else ""
+            rfc = self.config.sat.rfc if self.config.sat else ""
+            if nombre:
+                parts.append(f"[bold]{nombre}[/bold]")
+            parts.append(f"RFC: {rfc or '---'}")
+        else:
+            parts.append("RFC: ---")
+        parts.append(date.today().strftime("%d/%m/%Y"))
         n_emi = self.db.count(tipo="emitida")
         n_rec = self.db.count(tipo="recibida")
         total = n_emi + n_rec
-        stats = self.query_one("#stats", Static)
         if total == 0:
-            stats.update("Base de datos vacía")
+            parts.append("BD vacía")
         else:
-            stats.update(
-                f"BD: {total} CFDIs ({n_emi} emitidas, {n_rec} recibidas)"
-            )
+            parts.append(f"BD: {total} CFDIs ({n_emi} E, {n_rec} R)")
+        return "  │  ".join(parts)
 
-    @on(OptionList.OptionSelected, "#main-options")
-    def on_option_selected(self, event: OptionList.OptionSelected) -> None:
-        idx = event.option_index
-        actions = {
-            0: self.action_dashboard,
-            1: self.action_month,
-            2: self.action_search,
-            3: self.action_top,
-            4: self.action_export,
-            5: self.action_fiscal,
-            7: self.action_do_download,
-            8: self.action_do_import,
-            9: self.action_config,
-            11: self.exit,
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Static(self._build_info_text(), id="info-bar")
+
+        with Horizontal(id="menu-bar"):
+            yield Button("Dashboard", id="btn-dashboard", variant="primary", classes="menu-btn")
+            yield Button("Mes", id="btn-month", classes="menu-btn")
+            yield Button("Buscar", id="btn-search", classes="menu-btn")
+            yield Button("Top", id="btn-top", classes="menu-btn")
+            yield Button("Excel", id="btn-export", classes="menu-btn")
+            yield Button("Fiscal", id="btn-fiscal", classes="menu-btn")
+            yield Button("Descargar", id="btn-download", classes="menu-btn")
+            yield Button("Importar", id="btn-import", classes="menu-btn")
+            yield Button("Config", id="btn-config", classes="menu-btn")
+            yield Button("Salir", id="btn-quit", variant="error", classes="menu-btn")
+
+        yield VerticalScroll(id="content-scroll")
+        yield Static(id="status-bar")
+
+    async def on_mount(self) -> None:
+        is_configured = (
+            self.config
+            and self.config.sat
+            and self.config.sat.rfc
+        )
+        if is_configured:
+            await self._show_dashboard(CURRENT_YEAR)
+        else:
+            self.push_screen(ConfigScreen(self.config))
+
+    def _refresh_info_bar(self) -> None:
+        """Actualiza la línea de info tras cambio de configuración."""
+        try:
+            self.query_one("#info-bar", Static).update(self._build_info_text())
+        except Exception:
+            pass
+
+    async def _clear_content(self) -> None:
+        """Limpia el content area para nueva vista."""
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        await scroll.remove_children()
+
+    # ── Navegación de menú con flechas ──
+
+    def action_menu_prev(self) -> None:
+        self._move_menu_focus(-1)
+
+    def action_menu_next(self) -> None:
+        self._move_menu_focus(1)
+
+    def _move_menu_focus(self, direction: int) -> None:
+        focused = self.focused
+        if focused and focused.id in self._MENU_IDS:
+            idx = self._MENU_IDS.index(focused.id)
+            new_idx = (idx + direction) % len(self._MENU_IDS)
+        elif direction > 0:
+            new_idx = 0
+        else:
+            new_idx = len(self._MENU_IDS) - 1
+        try:
+            self.query_one(f"#{self._MENU_IDS[new_idx]}", Button).focus()
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#menu-bar Button")
+    def on_menu_button(self, event: Button.Pressed) -> None:
+        btn_actions = {
+            "btn-dashboard": self.action_dashboard,
+            "btn-month": self.action_month,
+            "btn-search": self.action_search,
+            "btn-top": self.action_top,
+            "btn-export": self.action_export,
+            "btn-fiscal": self.action_fiscal,
+            "btn-download": self.action_do_download,
+            "btn-import": self.action_do_import,
+            "btn-config": self.action_config,
+            "btn-quit": self.exit,
         }
-        action = actions.get(idx)
+        action = btn_actions.get(event.button.id)
         if action:
             action()
+
+    # ── Vistas inline en content area ──
+
+    async def _show_dashboard(self, year: int) -> None:
+        """Dashboard anual inline."""
+        await self._clear_content()
+        self._current_view = "dashboard"
+        self._view_year = year
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static(f"[bold blue]Dashboard {year}[/bold blue]", id="content-title"))
+        scroll.mount(DataTable(id="content-table"))
+        scroll.mount(Static(id="content-notes"))
+        self._load_dashboard_data(year)
+
+    @work(thread=True)
+    def _load_dashboard_data(self, year: int) -> None:
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
+        fiscal = calcular_impuestos_mensuales(self.db, year, regimen, config=self.config)
+
+        table = self.query_one("#content-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+
+        for label in ["Mes", "Emitidas", "Facturado", "Recibidas", "Gastos",
+                       "IVA x Pagar", "ISR Prov.", "Balance"]:
+            table.add_column(label, key=label)
+
+        grand_emi = grand_rec = grand_iva = grand_isr = 0.0
+
+        for month in range(1, 13):
+            se = self.db.monthly_summary(year, month, "emitida")
+            sr = self.db.monthly_summary(year, month, "recibida")
+            fi = fiscal[month - 1]
+
+            total_emi = se["total"]
+            total_rec = sr["total"]
+            iva_pagar = fi["iva_a_pagar"]
+            isr_prov = fi["isr_provisional"]
+            balance = total_emi - total_rec
+
+            grand_emi += total_emi
+            grand_rec += total_rec
+            grand_iva += iva_pagar
+            grand_isr += isr_prov
+
+            n_total = se["num_cfdis"] + sr["num_cfdis"]
+
+            table.add_row(
+                MESES[month],
+                str(se["num_cfdis"]) if se["num_cfdis"] else "-",
+                _fmt(total_emi) if total_emi else "$0.00",
+                str(sr["num_cfdis"]) if sr["num_cfdis"] else "-",
+                _fmt(total_rec) if total_rec else "$0.00",
+                _fmt(iva_pagar) if n_total else "-",
+                _fmt(isr_prov) if n_total else "-",
+                _fmt(balance) if n_total else "-",
+                key=str(month),
+            )
+
+        table.add_row(
+            "TOTAL", "", _fmt(grand_emi), "", _fmt(grand_rec),
+            _fmt(grand_iva), _fmt(grand_isr), _fmt(grand_emi - grand_rec),
+            key="total",
+        )
+
+        self.query_one("#content-notes", Static).update(
+            f"IVA x Pagar = cobrado - acreditable - retenido  │  {isr_label(regimen)}  │  "
+            "[dim]Enter en un mes → detalle[/dim]"
+        )
+
+    async def _show_month(self, year: int, month: int) -> None:
+        """Detalle mensual inline."""
+        await self._clear_content()
+        self._current_view = "month"
+        self._view_year = year
+        self._month_uuids_emi = []
+        self._month_uuids_rec = []
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static(
+            f"[bold blue]{MESES[month]} {year}[/bold blue]",
+            id="content-title",
+        ))
+        scroll.mount(Static(id="month-summary"))
+        scroll.mount(DataTable(id="month-emitidas"))
+        scroll.mount(DataTable(id="month-recibidas"))
+        self._load_month_data(year, month)
+
+    @work(thread=True)
+    def _load_month_data(self, year: int, month: int) -> None:
+        fecha_inicio = date(year, month, 1)
+        fecha_fin = _next_month(year, month)
+
+        se = self.db.monthly_summary(year, month, "emitida")
+        sr = self.db.monthly_summary(year, month, "recibida")
+
+        self.query_one("#month-summary", Static).update(
+            f"Emitidas: {se['num_cfdis']}  {_fmt(se['total'])}    "
+            f"Recibidas: {sr['num_cfdis']}  {_fmt(sr['total'])}  "
+            "[dim]Enter → detalle CFDI[/dim]"
+        )
+
+        emitidas = self.db.search(
+            tipo="emitida", fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, limit=500,
+        )
+        self._month_uuids_emi = [c.uuid for c in emitidas]
+        self._fill_cfdi_table("#month-emitidas", emitidas, "Emitidas")
+
+        recibidas = self.db.search(
+            tipo="recibida", fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, limit=500,
+        )
+        self._month_uuids_rec = [c.uuid for c in recibidas]
+        self._fill_cfdi_table("#month-recibidas", recibidas, "Recibidas")
+
+    def _fill_cfdi_table(self, table_id: str, cfdis: list, label: str) -> None:
+        table = self.query_one(table_id, DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        for col in ["#", "Fecha", "Contraparte", "Concepto", "Total", "Estado", "UUID"]:
+            table.add_column(col, key=f"{table_id}_{col}")
+
+        if not cfdis:
+            table.add_row("-", "-", f"Sin {label.lower()}", "-", "-", "-", "-")
+            return
+
+        total_monto = 0.0
+        for i, c in enumerate(cfdis, 1):
+            contraparte = (
+                c.nombre_receptor or c.rfc_receptor
+                if c.tipo == "emitida"
+                else c.nombre_emisor or c.rfc_emisor
+            )
+            concepto = ""
+            if c.conceptos:
+                concepto = c.conceptos[0].descripcion
+                if len(c.conceptos) > 1:
+                    concepto += f" (+{len(c.conceptos) - 1})"
+            monto = float(c.total) if c.total else 0
+            total_monto += monto
+            table.add_row(
+                str(i), c.fecha.strftime("%d/%m/%Y"),
+                (contraparte or "")[:30], concepto[:35],
+                _fmt(monto), c.estado[:3], c.uuid[:8],
+            )
+
+        table.add_row("", "", "", f"{len(cfdis)} CFDIs", _fmt(total_monto), "", "")
+
+    async def _show_search(self) -> None:
+        """Búsqueda inline."""
+        await self._clear_content()
+        self._current_view = "search"
+        self._search_uuids = []
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static("[bold]Buscar CFDIs[/bold]", id="content-title"))
+        scroll.mount(Input(
+            placeholder="RFC o nombre (mín. 3 caracteres) — Enter para buscar",
+            id="search-input", classes="inline-input",
+        ))
+        scroll.mount(Static(id="search-status"))
+        scroll.mount(DataTable(id="search-results"))
+
+    async def _show_top(self, year: int) -> None:
+        """Top entidades inline."""
+        await self._clear_content()
+        self._current_view = "top"
+        self._view_year = year
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static(
+            f"[bold blue]Top Entidades - {year}[/bold blue]", id="content-title",
+        ))
+        scroll.mount(DataTable(id="top-proveedores"))
+        scroll.mount(DataTable(id="top-clientes"))
+        self._load_top_data(year)
+
+    @work(thread=True)
+    def _load_top_data(self, year: int) -> None:
+        fecha_inicio = date(year, 1, 1)
+        fecha_fin = date(year + 1, 1, 1)
+        conn = self.db.conn
+
+        rows = conn.execute(
+            """SELECT rfc_emisor, nombre_emisor, COUNT(*) as n, SUM(total) as total
+               FROM comprobantes
+               WHERE tipo = 'recibida' AND fecha >= ? AND fecha < ?
+               GROUP BY rfc_emisor ORDER BY total DESC LIMIT 15""",
+            (fecha_inicio.isoformat(), fecha_fin.isoformat()),
+        ).fetchall()
+
+        t_prov = self.query_one("#top-proveedores", DataTable)
+        t_prov.cursor_type = "row"
+        t_prov.zebra_stripes = True
+        for col in ["#", "RFC", "Nombre", "CFDIs", "Total"]:
+            t_prov.add_column(col, key=f"p_{col}")
+        for i, r in enumerate(rows, 1):
+            t_prov.add_row(
+                str(i), r["rfc_emisor"], (r["nombre_emisor"] or "")[:35],
+                str(r["n"]), _fmt(r["total"]),
+            )
+
+        rows = conn.execute(
+            """SELECT rfc_receptor, nombre_receptor, COUNT(*) as n, SUM(total) as total
+               FROM comprobantes
+               WHERE tipo = 'emitida' AND fecha >= ? AND fecha < ?
+               GROUP BY rfc_receptor ORDER BY total DESC LIMIT 15""",
+            (fecha_inicio.isoformat(), fecha_fin.isoformat()),
+        ).fetchall()
+
+        t_cli = self.query_one("#top-clientes", DataTable)
+        t_cli.cursor_type = "row"
+        t_cli.zebra_stripes = True
+        for col in ["#", "RFC", "Nombre", "CFDIs", "Total"]:
+            t_cli.add_column(col, key=f"c_{col}")
+        for i, r in enumerate(rows, 1):
+            t_cli.add_row(
+                str(i), r["rfc_receptor"], (r["nombre_receptor"] or "")[:35],
+                str(r["n"]), _fmt(r["total"]),
+            )
+
+    async def _show_fiscal_menu(self) -> None:
+        """Submenú fiscal inline."""
+        await self._clear_content()
+        self._current_view = "fiscal_menu"
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
+        scroll.mount(Static(
+            f"[bold magenta]Análisis Fiscal Inteligente[/bold magenta]  │  "
+            f"Régimen: {regimen} — {isr_label(regimen)}",
+            id="content-title",
+        ))
+        scroll.mount(Button("1. Clasificar deducciones del periodo", id="fiscal-btn-1", classes="menu-btn"))
+        scroll.mount(Button("2. Resumen por categoría de gasto", id="fiscal-btn-2", classes="menu-btn"))
+        scroll.mount(Button("3. ISR e IVA estimados a declarar", id="fiscal-btn-3", classes="menu-btn"))
+        scroll.mount(Button("4. Sugerencias de optimización", id="fiscal-btn-4", classes="menu-btn"))
+        scroll.mount(Button("5. Consultar deducibilidad de un CFDI", id="fiscal-btn-5", classes="menu-btn"))
+
+    async def _show_fiscal_impuestos(self, year: int) -> None:
+        """ISR/IVA estimados inline."""
+        await self._clear_content()
+        self._current_view = "fiscal_impuestos"
+        self._view_year = year
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static(
+            f"[bold magenta]Impuestos Provisionales - {year}[/bold magenta]",
+            id="content-title",
+        ))
+        scroll.mount(Static("Calculando...", id="imp-loading"))
+        scroll.mount(DataTable(id="imp-table"))
+        scroll.mount(Static(id="imp-detail"))
+        scroll.mount(Static(id="imp-notes"))
+        self._load_fiscal_impuestos(year)
+
+    @work(thread=True)
+    def _load_fiscal_impuestos(self, year: int) -> None:
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
+        fiscal = calcular_impuestos_mensuales(self.db, year, regimen, config=self.config)
+
+        table = self.query_one("#imp-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+
+        for col in ["Mes", "Ingresos", "Ded. Reales", "No Deducible",
+                     "IVA x Pagar", "ISR Prov.", "Total x Pagar"]:
+            table.add_column(col, key=col)
+
+        grand = {"ing": 0.0, "ded": 0.0, "no_ded": 0.0, "iva": 0.0, "isr": 0.0}
+
+        for fi in fiscal:
+            m = fi["mes"]
+            ingresos = fi["ingresos_mes"]
+            ded_reales = fi["deducciones_mes"]
+            no_ded = fi["deducciones_no_deducibles"]
+            iva_pagar = fi["iva_a_pagar"]
+            isr_prov = fi["isr_provisional"]
+            total_pagar = iva_pagar + isr_prov
+
+            grand["ing"] += ingresos
+            grand["ded"] += ded_reales
+            grand["no_ded"] += no_ded
+            grand["iva"] += iva_pagar
+            grand["isr"] += isr_prov
+
+            if ingresos <= 0 and ded_reales <= 0:
+                table.add_row(MESES[m], "-", "-", "-", "-", "-", "-")
+                continue
+
+            table.add_row(
+                MESES[m], _fmt(ingresos), _fmt(ded_reales), _fmt(no_ded),
+                _fmt(iva_pagar), _fmt(isr_prov), _fmt(total_pagar),
+            )
+
+        grand_total = grand["iva"] + grand["isr"]
+        table.add_row(
+            "TOTAL", _fmt(grand["ing"]), _fmt(grand["ded"]), _fmt(grand["no_ded"]),
+            _fmt(grand["iva"]), _fmt(grand["isr"]), _fmt(grand_total),
+        )
+
+        self.query_one("#imp-loading", Static).update("")
+
+        last_fi = None
+        for fi in reversed(fiscal):
+            if fi["ingresos_mes"] > 0 or fi["deducciones_mes"] > 0:
+                last_fi = fi
+                break
+
+        if last_fi:
+            m = last_fi["mes"]
+            detail = (
+                f"\nDetalle {MESES[m]} {year}:\n"
+                f"  IVA cobrado:            {_fmt(last_fi['iva_cobrado']):>14}\n"
+                f"  IVA acreditable:        {_fmt(last_fi['iva_acreditable']):>14}  (solo de gastos deducibles)\n"
+                f"  IVA retenido:           {_fmt(last_fi['iva_retenido']):>14}\n"
+                f"  IVA a pagar:            {_fmt(last_fi['iva_a_pagar']):>14}\n\n"
+                f"  Ingresos acumulados:    {_fmt(last_fi['ingresos_acum']):>14}\n"
+                f"  Deducciones acumuladas: {_fmt(last_fi['deducciones_acum']):>14}  (solo deducibles)\n"
+                f"  Base gravable:          {_fmt(last_fi['base_gravable']):>14}\n"
+                f"  ISR s/tarifa Art.96:    {_fmt(last_fi['isr_tarifa']):>14}\n"
+                f"  ISR retenido acum.:     {_fmt(last_fi['isr_retenido_acum']):>14}\n"
+                f"  Pagos prov. anteriores: {_fmt(last_fi['pagos_prov_anteriores']):>14}\n"
+                f"  ISR provisional:        {_fmt(last_fi['isr_provisional']):>14}\n"
+            )
+            self.query_one("#imp-detail", Static).update(detail)
+
+        self.query_one("#imp-notes", Static).update(
+            "* IVA acreditable = solo IVA de gastos clasificados como deducibles\n"
+            "* ISR = Art.96 LISR sobre (ingresos acum. - deducciones reales acum.)\n"
+            "* No incluye depreciaciones de inversiones, PTU ni pérdidas anteriores"
+        )
+
+    async def _show_fiscal_clasificacion(self, year: int, month: int | None) -> None:
+        """Clasificación de deducciones inline."""
+        await self._clear_content()
+        self._current_view = "fiscal_clasificacion"
+        self._fiscal_uuids = []
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        titulo = f"{MESES[month]} {year}" if month else str(year)
+        scroll.mount(Static(
+            f"[bold magenta]Deducciones - {titulo}[/bold magenta]",
+            id="content-title",
+        ))
+        scroll.mount(Static("Clasificando...", id="fiscal-loading"))
+        scroll.mount(DataTable(id="fiscal-table"))
+        scroll.mount(Static(id="fiscal-totals"))
+        self._load_fiscal_clasificacion(year, month)
+
+    @work(thread=True)
+    def _load_fiscal_clasificacion(self, year: int, month: int | None) -> None:
+        if month:
+            fecha_inicio = date(year, month, 1)
+            fecha_fin = _next_month(year, month)
+        else:
+            fecha_inicio = date(year, 1, 1)
+            fecha_fin = date(year + 1, 1, 1)
+
+        gastos = []
+        for tipo_comp in ("I", "E"):
+            gastos.extend(self.db.search(
+                tipo="recibida", tipo_comprobante=tipo_comp,
+                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+                estado="Vigente", limit=5000,
+            ))
+
+        loading = self.query_one("#fiscal-loading", Static)
+        if not gastos:
+            loading.update("[yellow]No hay facturas recibidas en este periodo.[/yellow]")
+            return
+
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
+        clasificador = ClasificadorDeducciones(regimen, self.db)
+
+        table = self.query_one("#fiscal-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        for col in ["#", "Fecha", "Concepto", "Categoría", "Monto", "Deducible", "%", ""]:
+            table.add_column(col, key=col)
+
+        total_original = total_deducible = 0.0
+        i = 0
+        for comp in gastos:
+            if not comp.conceptos:
+                continue
+            signo = -1.0 if comp.tipo_comprobante == "E" else 1.0
+            clasificaciones = clasificador.clasificar_comprobante(comp)
+            for clas in clasificaciones:
+                i += 1
+                monto_orig = float(clas.monto_original) * signo
+                monto_ded = float(clas.monto_deducible) * signo
+                total_original += monto_orig
+                total_deducible += monto_ded
+
+                if comp.tipo_comprobante == "E":
+                    indicator = "NC"
+                elif not clas.es_deducible:
+                    indicator = "X"
+                elif clas.alertas:
+                    indicator = "!"
+                else:
+                    indicator = "V"
+
+                table.add_row(
+                    str(i), comp.fecha.strftime("%d/%m"),
+                    clas.concepto_descripcion[:30], clas.categoria[:20],
+                    _fmt(monto_orig), _fmt(monto_ded),
+                    f"{clas.porcentaje_deducible:.0f}%", indicator,
+                )
+                self._fiscal_uuids.append(comp.uuid)
+                if i >= 200:
+                    break
+            if i >= 200:
+                break
+
+        loading.update("")
+        pct = (total_deducible / total_original * 100) if total_original > 0 else 0
+        self.query_one("#fiscal-totals", Static).update(
+            f"Deducible: {_fmt(total_deducible)} ({pct:.0f}%)  │  "
+            f"No deducible: {_fmt(total_original - total_deducible)}  │  "
+            f"{i} conceptos  │  V=deducible  !=alertas  X=no ded.  NC=nota crédito"
+        )
+
+    async def _show_fiscal_categorias(self, year: int) -> None:
+        """Resumen por categoría inline."""
+        await self._clear_content()
+        self._current_view = "fiscal_categorias"
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static(
+            f"[bold magenta]Deducciones por Categoría - {year}[/bold magenta]",
+            id="content-title",
+        ))
+        scroll.mount(Static("Analizando...", id="cat-loading"))
+        scroll.mount(DataTable(id="cat-table"))
+        scroll.mount(Static(id="cat-totals"))
+        scroll.mount(Static(id="cat-alertas"))
+        self._load_fiscal_categorias(year)
+
+    @work(thread=True)
+    def _load_fiscal_categorias(self, year: int) -> None:
+        fecha_inicio = date(year, 1, 1)
+        fecha_fin = date(year + 1, 1, 1)
+        gastos = []
+        for tipo_comp in ("I", "E"):
+            gastos.extend(self.db.search(
+                tipo="recibida", tipo_comprobante=tipo_comp,
+                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+                estado="Vigente", limit=5000,
+            ))
+
+        loading = self.query_one("#cat-loading", Static)
+        if not gastos:
+            loading.update("[yellow]No hay facturas recibidas.[/yellow]")
+            return
+
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
+        clasificador = ClasificadorDeducciones(regimen, self.db)
+        resumen = clasificador.resumen_periodo(gastos)
+
+        table = self.query_one("#cat-table", DataTable)
+        table.cursor_type = "row"
+        table.zebra_stripes = True
+        for col in ["Categoría", "Conceptos", "Monto Total", "Deducible", "%", "Alertas"]:
+            table.add_column(col, key=col)
+
+        cats_sorted = sorted(
+            resumen["por_categoria"].items(),
+            key=lambda x: float(x[1]["monto_deducible"]), reverse=True,
+        )
+        for cat_id, cat_data in cats_sorted:
+            table.add_row(
+                cat_data["nombre"][:30], str(cat_data["num_conceptos"]),
+                _fmt(float(cat_data["monto_original"])),
+                _fmt(float(cat_data["monto_deducible"])),
+                f"{cat_data['porcentaje']:.0f}%",
+                str(len(cat_data["alertas"])) if cat_data["alertas"] else "-",
+            )
+
+        loading.update("")
+        self.query_one("#cat-totals", Static).update(
+            f"Total: {_fmt(float(resumen['total_original']))}  │  "
+            f"Deducible: {_fmt(float(resumen['total_deducible']))} ({resumen['porcentaje_global']:.0f}%)  │  "
+            f"No deducible: {_fmt(float(resumen['total_no_deducible']))}"
+        )
+        if resumen["alertas"]:
+            self.query_one("#cat-alertas", Static).update(
+                "Alertas: " + " │ ".join(resumen["alertas"][:5])
+            )
+
+    async def _show_fiscal_sugerencias(self, year: int) -> None:
+        """Sugerencias de optimización inline."""
+        await self._clear_content()
+        self._current_view = "fiscal_sugerencias"
+        scroll = self.query_one("#content-scroll", VerticalScroll)
+        scroll.mount(Static(
+            f"[bold magenta]Sugerencias de Optimización - {year}[/bold magenta]",
+            id="content-title",
+        ))
+        scroll.mount(Static("Analizando...", id="sug-loading"))
+        scroll.mount(Static(id="sug-content"))
+        self._load_fiscal_sugerencias(year)
+
+    @work(thread=True)
+    def _load_fiscal_sugerencias(self, year: int) -> None:
+        fecha_inicio = date(year, 1, 1)
+        fecha_fin = date(year + 1, 1, 1)
+        gastos = []
+        for tipo_comp in ("I", "E"):
+            gastos.extend(self.db.search(
+                tipo="recibida", tipo_comprobante=tipo_comp,
+                fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+                estado="Vigente", limit=5000,
+            ))
+
+        loading = self.query_one("#sug-loading", Static)
+        if not gastos:
+            loading.update("[yellow]No hay facturas para analizar.[/yellow]")
+            return
+
+        ingresos = 0.0
+        for month in range(1, 13):
+            se = self.db.monthly_summary(year, month, "emitida")
+            ingresos += se["ingresos"]
+
+        regimen = "612"
+        if self.config and self.config.contribuyente:
+            regimen = self.config.contribuyente.regimen
+        clasificador = ClasificadorDeducciones(regimen, self.db)
+        sugerencias = clasificador.generar_sugerencias(gastos, ingresos)
+
+        if self.config and self.config.ia and self.config.ia.api_key:
+            try:
+                from ..fiscal.ia_fiscal import AsistenteFiscal
+                asistente = AsistenteFiscal(
+                    api_key=self.config.ia.api_key, regimen=regimen,
+                    actividad=(self.config.contribuyente.actividad
+                               if self.config.contribuyente else ""),
+                    model=self.config.ia.model, provider=self.config.ia.provider,
+                    base_url=self.config.ia.base_url,
+                )
+                resumen = clasificador.resumen_periodo(gastos)
+                sugerencias.extend(asistente.generar_sugerencias(resumen, ingresos))
+            except Exception:
+                pass
+
+        loading.update("")
+        if not sugerencias:
+            self.query_one("#sug-content", Static).update(
+                "[green]No se encontraron sugerencias adicionales.[/green]"
+            )
+            return
+
+        lines = []
+        for i, sug in enumerate(sugerencias, 1):
+            prioridad_icon = {1: "!!!", 2: "!!", 3: "!"}.get(sug.prioridad, "")
+            ahorro = ""
+            if sug.ahorro_estimado:
+                ahorro = f"  (ahorro estimado: {_fmt(float(sug.ahorro_estimado))})"
+            lines.append(f"{prioridad_icon} {i}. {sug.titulo}")
+            lines.append(f"   {sug.descripcion}{ahorro}")
+            lines.append("")
+        lines.append("* Sugerencias educativas, no sustituyen asesoría fiscal profesional.")
+        self.query_one("#sug-content", Static).update("\n".join(lines))
+
+    # ── Event handlers para DataTable rows en vistas inline ──
+
+    @on(DataTable.RowSelected, "#content-table")
+    async def on_content_row_selected(self, event: DataTable.RowSelected) -> None:
+        if self._current_view != "dashboard":
+            return
+        row_key = event.row_key.value
+        if row_key and row_key != "total":
+            try:
+                month = int(row_key)
+                await self._show_month(self._view_year, month)
+            except ValueError:
+                pass
+
+    @on(DataTable.RowSelected, "#month-emitidas")
+    def on_emi_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._month_uuids_emi):
+            self.push_screen(CfdiDetailScreen(self.db, self._month_uuids_emi[idx]))
+
+    @on(DataTable.RowSelected, "#month-recibidas")
+    def on_rec_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._month_uuids_rec):
+            self.push_screen(CfdiDetailScreen(self.db, self._month_uuids_rec[idx]))
+
+    @on(Input.Submitted, "#search-input")
+    def on_search_submit(self, event: Input.Submitted) -> None:
+        query = event.value.strip()
+        if len(query) < 3:
+            self.query_one("#search-status", Static).update(
+                "[yellow]Ingresa al menos 3 caracteres.[/yellow]"
+            )
+            return
+        self._run_search(query)
+
+    @work(thread=True)
+    def _run_search(self, query: str) -> None:
+        results = self.db.search(rfc=query.upper(), limit=50)
+        if not results:
+            conn = self.db.conn
+            rows = conn.execute(
+                """SELECT * FROM comprobantes
+                   WHERE nombre_emisor LIKE ? OR nombre_receptor LIKE ?
+                   ORDER BY fecha DESC LIMIT 50""",
+                (f"%{query}%", f"%{query}%"),
+            ).fetchall()
+            from ..db.repository import _row_to_comprobante
+            results = [_row_to_comprobante(r) for r in rows]
+
+        status = self.query_one("#search-status", Static)
+        table = self.query_one("#search-results", DataTable)
+        table.clear(columns=True)
+        self._search_uuids = []
+
+        if not results:
+            status.update("[yellow]No se encontraron resultados.[/yellow]")
+            return
+
+        status.update(f"[green]{len(results)} resultado(s)[/green]")
+        table.cursor_type = "row"
+        for col in ["#", "Fecha", "Tipo", "Contraparte", "Concepto", "Total", "UUID"]:
+            table.add_column(col, key=col)
+
+        self._search_uuids = [c.uuid for c in results]
+        for i, c in enumerate(results, 1):
+            contraparte = (
+                c.nombre_receptor or c.rfc_receptor
+                if c.tipo == "emitida"
+                else c.nombre_emisor or c.rfc_emisor
+            )
+            concepto = c.conceptos[0].descripcion[:30] if c.conceptos else ""
+            monto = float(c.total) if c.total else 0
+            table.add_row(
+                str(i), c.fecha.strftime("%d/%m"),
+                c.tipo[:3].upper(), (contraparte or "")[:28],
+                concepto, _fmt(monto), c.uuid[:8],
+            )
+
+    @on(DataTable.RowSelected, "#search-results")
+    def on_search_row_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._search_uuids):
+            self.push_screen(CfdiDetailScreen(self.db, self._search_uuids[idx]))
+
+    @on(DataTable.RowSelected, "#fiscal-table")
+    def on_fiscal_row_selected(self, event: DataTable.RowSelected) -> None:
+        idx = event.cursor_row
+        if 0 <= idx < len(self._fiscal_uuids):
+            self.push_screen(CfdiDetailScreen(self.db, self._fiscal_uuids[idx]))
+
+    # ── Fiscal sub-menu button handlers ──
+
+    @on(Button.Pressed, "#fiscal-btn-1")
+    def on_fiscal_1(self, event: Button.Pressed) -> None:
+        async def on_period(result):
+            if result:
+                year, month = result
+                await self._show_fiscal_clasificacion(year, month)
+        self.push_screen(YearMonthInputScreen("Clasificar Deducciones"), on_period)
+
+    @on(Button.Pressed, "#fiscal-btn-2")
+    def on_fiscal_2(self, event: Button.Pressed) -> None:
+        async def on_year(year):
+            if year:
+                await self._show_fiscal_categorias(year)
+        self.push_screen(YearInputScreen("Resumen por Categoría - Año"), on_year)
+
+    @on(Button.Pressed, "#fiscal-btn-3")
+    def on_fiscal_3(self, event: Button.Pressed) -> None:
+        async def on_year(year):
+            if year:
+                await self._show_fiscal_impuestos(year)
+        self.push_screen(YearInputScreen("ISR/IVA Estimados - Año"), on_year)
+
+    @on(Button.Pressed, "#fiscal-btn-4")
+    def on_fiscal_4(self, event: Button.Pressed) -> None:
+        async def on_year(year):
+            if year:
+                await self._show_fiscal_sugerencias(year)
+        self.push_screen(YearInputScreen("Sugerencias - Año"), on_year)
+
+    @on(Button.Pressed, "#fiscal-btn-5")
+    def on_fiscal_5(self, event: Button.Pressed) -> None:
+        def on_uuid(uuid):
+            if uuid:
+                self._resolve_fiscal_uuid(uuid)
+        self.push_screen(UuidInputScreen(), on_uuid)
+
+    def _resolve_fiscal_uuid(self, prefix: str) -> None:
+        prefix = prefix.upper().strip()
+        rows = self.db.conn.execute(
+            "SELECT uuid FROM comprobantes WHERE uuid LIKE ? LIMIT 5",
+            (f"{prefix}%",),
+        ).fetchall()
+        if not rows:
+            self.notify(f"No se encontró CFDI '{prefix}...'", severity="warning")
+            return
+        if len(rows) > 1:
+            self.notify(f"Múltiples coincidencias ({len(rows)}). Usa más caracteres.", severity="warning")
+            return
+        self.push_screen(FiscalCfdiScreen(self.db, self.config, rows[0]["uuid"]))
 
     # ── Acciones de navegación ──
 
     def action_dashboard(self) -> None:
-        def on_year(year: int | None) -> None:
+        async def on_year(year: int | None) -> None:
             if year:
-                self.push_screen(DashboardScreen(self.db, self.config, year))
-
+                await self._show_dashboard(year)
         self.push_screen(YearInputScreen("Dashboard - Año"), on_year)
 
     def action_month(self) -> None:
-        def on_period(result: tuple | None) -> None:
+        async def on_period(result: tuple | None) -> None:
             if result:
                 year, month = result
                 m = month if month else CURRENT_MONTH
-                self.push_screen(MonthDetailScreen(self.db, year, m))
-
+                await self._show_month(year, m)
         self.push_screen(
             YearMonthInputScreen("Detalle Mensual", ask_month=True), on_period
         )
 
-    def action_search(self) -> None:
-        self.push_screen(SearchScreen(self.db))
+    async def action_search(self) -> None:
+        await self._show_search()
 
     def action_top(self) -> None:
-        def on_year(year: int | None) -> None:
+        async def on_year(year: int | None) -> None:
             if year:
-                self.push_screen(TopEntitiesScreen(self.db, year))
-
+                await self._show_top(year)
         self.push_screen(YearInputScreen("Top Entidades - Año"), on_year)
 
     def action_export(self) -> None:
@@ -1646,7 +1621,6 @@ class SATExtractorApp(App):
             if result:
                 year, month = result
                 self._do_export(year, month)
-
         self.push_screen(
             YearMonthInputScreen("Exportar Excel (mes 0 = anual)"), on_period
         )
@@ -1665,7 +1639,6 @@ class SATExtractorApp(App):
             else:
                 path = self.exporter.annual_report(year, output_dir)
             self.notify(f"Reporte guardado: {path}", title="Excel", timeout=8)
-            # Abrir con la aplicación por defecto del sistema
             try:
                 subprocess.Popen(
                     ["xdg-open", str(path)],
@@ -1673,15 +1646,17 @@ class SATExtractorApp(App):
                     stderr=subprocess.DEVNULL,
                 )
             except FileNotFoundError:
-                pass  # xdg-open no disponible
+                pass
         except Exception as e:
             self.notify(f"Error: {e}", title="Error", severity="error")
 
-    def action_fiscal(self) -> None:
-        self.push_screen(FiscalMenuScreen(self.db, self.config))
+    async def action_fiscal(self) -> None:
+        await self._show_fiscal_menu()
 
     def action_config(self) -> None:
-        self.push_screen(ConfigScreen(self.config))
+        def on_config_close() -> None:
+            self._refresh_info_bar()
+        self.push_screen(ConfigScreen(self.config), on_config_close)
 
     def _set_status(self, text: str) -> None:
         """Actualiza la barra de estado desde cualquier hilo."""
@@ -1769,7 +1744,7 @@ class SATExtractorApp(App):
                 f"{total_new} CFDIs importados", title="Descarga SAT",
                 timeout=8,
             )
-            self.call_from_thread(self._refresh_stats)
+            self.call_from_thread(self._refresh_info_bar)
         except Exception as e:
             self.call_from_thread(self._set_status, "")
             self.notify(
@@ -1809,130 +1784,11 @@ class SATExtractorApp(App):
                 f"{counts['recibida']} recibidas",
                 title="Importación",
             )
-            self.call_from_thread(self._refresh_stats)
+            self.call_from_thread(self._refresh_info_bar)
         except Exception as e:
             self.notify(f"Error: {e}", title="Error", severity="error")
 
 
-class FiscalMenuScreen(BackScreen):
-    """Menú de Análisis Fiscal Inteligente."""
-
-    BINDINGS = [
-        Binding("1", "fiscal_clasificar", "Clasificar", show=False),
-        Binding("2", "fiscal_categorias", "Categorías", show=False),
-        Binding("3", "fiscal_impuestos", "ISR/IVA", show=False),
-        Binding("4", "fiscal_sugerencias", "Sugerencias", show=False),
-        Binding("5", "fiscal_cfdi", "Consultar CFDI", show=False),
-    ]
-
-    def __init__(self, db: Repository, config):
-        super().__init__()
-        self.db = db
-        self.config = config
-
-    def compose(self) -> ComposeResult:
-        regimen = "612"
-        if self.config and self.config.contribuyente:
-            regimen = self.config.contribuyente.regimen
-
-        yield Header()
-        yield Vertical(
-            Static(
-                f"[bold magenta]Análisis Fiscal Inteligente[/bold magenta]\n"
-                f"Régimen: {regimen} — {isr_label(regimen)}"
-            ),
-            OptionList(
-                "  [1] Clasificar deducciones del periodo",
-                "  [2] Resumen por categoría de gasto",
-                "  [3] ISR e IVA estimados a declarar",
-                "  [4] Sugerencias de optimización",
-                "  [5] Consultar deducibilidad de un CFDI",
-                id="fiscal-options",
-            ),
-            id="fiscal-menu",
-        )
-        yield Footer()
-
-    @on(OptionList.OptionSelected, "#fiscal-options")
-    def on_fiscal_option(self, event: OptionList.OptionSelected) -> None:
-        actions = {
-            0: self.action_fiscal_clasificar,
-            1: self.action_fiscal_categorias,
-            2: self.action_fiscal_impuestos,
-            3: self.action_fiscal_sugerencias,
-            4: self.action_fiscal_cfdi,
-        }
-        action = actions.get(event.option_index)
-        if action:
-            action()
-
-    def action_fiscal_clasificar(self) -> None:
-        def on_period(result: tuple | None) -> None:
-            if result:
-                year, month = result
-                self.app.push_screen(
-                    FiscalClasificacionScreen(self.db, self.config, year, month)
-                )
-
-        self.app.push_screen(
-            YearMonthInputScreen("Clasificar Deducciones"), on_period
-        )
-
-    def action_fiscal_categorias(self) -> None:
-        def on_year(year: int | None) -> None:
-            if year:
-                self.app.push_screen(
-                    FiscalCategoriasScreen(self.db, self.config, year)
-                )
-
-        self.app.push_screen(YearInputScreen("Resumen por Categoría - Año"), on_year)
-
-    def action_fiscal_impuestos(self) -> None:
-        def on_year(year: int | None) -> None:
-            if year:
-                self.app.push_screen(
-                    FiscalImpuestosScreen(self.db, self.config, year)
-                )
-
-        self.app.push_screen(YearInputScreen("ISR/IVA Estimados - Año"), on_year)
-
-    def action_fiscal_sugerencias(self) -> None:
-        def on_year(year: int | None) -> None:
-            if year:
-                self.app.push_screen(
-                    FiscalSugerenciasScreen(self.db, self.config, year)
-                )
-
-        self.app.push_screen(YearInputScreen("Sugerencias - Año"), on_year)
-
-    def action_fiscal_cfdi(self) -> None:
-        def on_uuid(uuid: str | None) -> None:
-            if uuid:
-                self._resolve_uuid(uuid)
-
-        self.app.push_screen(UuidInputScreen(), on_uuid)
-
-    def _resolve_uuid(self, prefix: str) -> None:
-        prefix = prefix.upper().strip()
-        rows = self.db.conn.execute(
-            "SELECT uuid FROM comprobantes WHERE uuid LIKE ? LIMIT 5",
-            (f"{prefix}%",),
-        ).fetchall()
-
-        if not rows:
-            self.app.notify(f"No se encontró CFDI '{prefix}...'", severity="warning")
-            return
-
-        if len(rows) > 1:
-            self.app.notify(
-                f"Múltiples coincidencias ({len(rows)}). Usa más caracteres.",
-                severity="warning",
-            )
-            return
-
-        self.app.push_screen(
-            FiscalCfdiScreen(self.db, self.config, rows[0]["uuid"])
-        )
 
 
 def run_tui(db_path: Path, config=None):
