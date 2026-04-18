@@ -1605,7 +1605,7 @@ class SATExtractorApp(App):
             7: self.action_do_download,
             8: self.action_do_import,
             9: self.action_config,
-            11: self.action_quit,
+            11: self.exit,
         }
         action = actions.get(idx)
         if action:
