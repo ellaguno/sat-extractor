@@ -110,12 +110,45 @@ class ClasificadorDeducciones:
                 alertas=[f"CFDI tipo '{tipo}' ({tipo_desc}) no aplica como deducción"],
                 fuente="regla_local",
                 confianza=1.0,
+                tipo_deduccion="no_deducible",
             )
 
         # 1. Buscar categoría por clave SAT
         categoria_id, categoria_data = self._buscar_categoria(clave)
 
         if categoria_data:
+            # Farmacéuticos: distinguir hospital vs farmacia (Art. 264 RLISR)
+            if categoria_id == "farmaceuticos":
+                if self._es_institucion_hospitalaria(comprobante.nombre_emisor):
+                    # Medicinas de hospital → deducción personal (Art. 151 Fracc. I)
+                    categoria_data = dict(categoria_data)
+                    categoria_data.pop("deduccion", None)
+                    categoria_data["deduccion_personal"] = "gastos_hospitalarios"
+                else:
+                    # Medicinas de farmacia → NO deducible
+                    # Art. 264 RLISR: solo instituciones hospitalarias
+                    resultado = ResultadoClasificacion(
+                        concepto_descripcion=desc,
+                        clave_prod_serv=clave,
+                        categoria="farmaceuticos",
+                        es_deducible=False,
+                        porcentaje_deducible=0.0,
+                        monto_original=monto,
+                        monto_deducible=Decimal("0"),
+                        fundamento_legal="Art. 264 Reglamento LISR - medicinas de farmacia no deducibles",
+                        requisitos=["Solo medicinas en facturas de instituciones hospitalarias son deducibles"],
+                        alertas=[
+                            "Medicamento de farmacia - NO deducible. Art. 264 RLISR: "
+                            "solo medicinas incluidas en documentos de instituciones "
+                            "hospitalarias son deducción personal (Art. 151 Fracc. I LISR)"
+                        ],
+                        fuente="regla_local",
+                        confianza=0.9,
+                        tipo_deduccion="no_deducible",
+                    )
+                    self._verificar_requisitos_generales(resultado, comprobante)
+                    return resultado
+
             resultado = self._aplicar_reglas(
                 categoria_id, categoria_data, concepto, comprobante, monto
             )
@@ -134,6 +167,7 @@ class ClasificadorDeducciones:
                 alertas=["Gasto no clasificado - no se asume deducible"],
                 fuente="regla_local",
                 confianza=0.3,
+                tipo_deduccion="no_deducible",
             )
 
         # Verificar requisitos generales (forma de pago, estado, etc.)
@@ -402,6 +436,7 @@ class ClasificadorDeducciones:
         # Determinar si es deducción empresarial o personal
         deduccion_id = categoria_data.get("deduccion", "")
         deduccion_personal_id = categoria_data.get("deduccion_personal", "")
+        tipo_deduccion = "empresarial"
 
         alertas: list[str] = []
         requisitos: list[str] = []
@@ -412,6 +447,7 @@ class ClasificadorDeducciones:
             porcentaje = regla.get("porcentaje", 100)
             fundamento = regla.get("fundamento", "Art. 103 LISR")
             requisitos = list(regla.get("requisitos", []))
+            tipo_deduccion = "empresarial" if porcentaje > 0 else "no_deducible"
 
             # Verificar forma de pago requerida
             formas_req = regla.get("forma_pago_requerida", [])
@@ -422,6 +458,7 @@ class ClasificadorDeducciones:
                         f"esta deducción. Requiere: {', '.join(formas_req)}"
                     )
                     porcentaje = 0  # No deducible sin forma de pago correcta
+                    tipo_deduccion = "no_deducible"
 
             # Verificar límite de monto
             limite = regla.get("limite_monto")
@@ -448,6 +485,7 @@ class ClasificadorDeducciones:
 
         elif deduccion_personal_id:
             # Deducción personal
+            tipo_deduccion = "personal"
             regla_personal = self.deducciones_personales.get(deduccion_personal_id, {})
             if isinstance(regla_personal, dict):
                 porcentaje = regla_personal.get("porcentaje", 100)
@@ -463,18 +501,23 @@ class ClasificadorDeducciones:
                             f"Forma de pago actual: '{comprobante.forma_pago}'"
                         )
                         porcentaje = 0
+                        tipo_deduccion = "no_deducible"
             else:
                 porcentaje = 100
                 fundamento = "Art. 151 LISR"
 
             monto_deducible = monto * Decimal(str(porcentaje / 100))
-            alertas.append("Deducción personal - aplica en declaración anual")
+            alertas.append(
+                "Deducción personal - aplica solo en declaración anual "
+                "(Art. 151/152 LISR), NO en pagos provisionales mensuales"
+            )
         else:
             if not self.deducciones:
                 # Régimen sin deducciones empresariales (RESICO, Plataformas)
                 porcentaje = 0
                 fundamento = f"Régimen {self.regimen} no permite deducciones empresariales"
                 monto_deducible = Decimal("0")
+                tipo_deduccion = "no_deducible"
             else:
                 # Sin regla específica, asumir gasto de operación
                 porcentaje = 100
@@ -496,6 +539,7 @@ class ClasificadorDeducciones:
             alertas=alertas,
             fuente="regla_local",
             confianza=0.8 if categoria_data else 0.3,
+            tipo_deduccion=tipo_deduccion,
         )
 
     def _verificar_requisitos_generales(
@@ -523,6 +567,38 @@ class ClasificadorDeducciones:
             resultado.es_deducible = False
             resultado.porcentaje_deducible = 0
             resultado.monto_deducible = Decimal("0")
+
+    @staticmethod
+    def _es_institucion_hospitalaria(nombre_emisor: str) -> bool:
+        """Determina si el emisor es una institución hospitalaria.
+
+        Art. 264 Reglamento LISR: medicinas solo son deducción personal
+        cuando se incluyen en documentos de instituciones hospitalarias.
+        Compras en farmacias NO son deducibles como deducción personal.
+        """
+        if not nombre_emisor:
+            return False
+        nombre = nombre_emisor.upper()
+        # Palabras clave de instituciones hospitalarias
+        hospital_keywords = [
+            "HOSPITAL", "CLINICA", "CLÍNICA", "SANATORIO",
+            "INSTITUTO", "CENTRO MEDICO", "CENTRO MÉDICO",
+            "IMSS", "ISSSTE", "LABORATORIO",
+        ]
+        # Palabras clave de farmacias (NO hospitalarias)
+        farmacia_keywords = [
+            "FARMACIA", "FARMACIAS", "FARMACEUTICA", "FARMACÉUTICA",
+            "BOTICA", "DROGUERIA", "DROGUERÍA",
+            "SIMILARES", "BENAVIDES", "GUADALAJARA",
+            "AHORRO", "SANA SANA", "GENERICO",
+        ]
+        for kw in farmacia_keywords:
+            if kw in nombre:
+                return False
+        for kw in hospital_keywords:
+            if kw in nombre:
+                return True
+        return False
 
     # ── Cache en BD (reservado para clasificaciones de IA) ────────────────────
     # El cache de reglas locales fue eliminado porque la deducibilidad depende

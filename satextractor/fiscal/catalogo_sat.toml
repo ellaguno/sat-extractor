@@ -341,9 +341,14 @@ prefijos = ["52"]  # Lavadoras, refrigeradores, etc. = personal
 # ── Consumo que podría ser de negocio (verificar) ───────────────────────────
 [categorias.farmaceuticos]
 descripcion = "Fármacos y productos medicinales"
-deduccion_personal = "honorarios_medicos"
+# Art. 264 Reglamento LISR: medicinas SOLO son deducción personal cuando se
+# incluyen en documentos expedidos por instituciones hospitalarias.
+# Compras en farmacias NO son deducibles (Art. 151 Fracc. I LISR + Art. 264 RLISR).
+# Ver clasificador.py: si el emisor es hospital → deducción personal,
+# si es farmacia → no deducible.
+deduccion = "consumo_personal"
 claves = []
-prefijos = ["51"]  # Podría ser deducción personal si es con receta
+prefijos = ["51"]
 
 [categorias.libros_publicaciones]
 descripcion = "Libros y publicaciones"

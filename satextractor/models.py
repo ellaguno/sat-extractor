@@ -70,6 +70,7 @@ class ResultadoClasificacion:
     alertas: list[str] = field(default_factory=list)
     fuente: str = "regla_local"  # "regla_local" | "ia" | "cache"
     confianza: float = 1.0  # 0-1
+    tipo_deduccion: str = "empresarial"  # "empresarial" | "personal" | "no_deducible"
 
 
 @dataclass

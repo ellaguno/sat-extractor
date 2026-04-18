@@ -449,13 +449,16 @@ class ExcelExporter:
 
         # Nota
         ws.cell(row=row + 1, column=1, value=(
-            "* IVA x Pagar = IVA cobrado - IVA acreditable (solo de gastos deducibles) - IVA retenido"
+            "* IVA x Pagar = IVA cobrado - IVA acreditable (solo de gastos con deducción empresarial) - IVA retenido"
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 2, column=1, value=(
             f"* ISR Prov. = {isr_label(self.regimen)}"
         )).font = Font(italic=True, size=9, color="888888")
         ws.cell(row=row + 3, column=1, value=(
-            "* Ded. Reales = solo gastos clasificados como deducibles. No Deducible = consumo personal, pagos en efectivo >$2,000, etc."
+            "* Ded. Reales = solo gastos empresariales (Art. 103 LISR). Deducciones personales (Art. 151) aplican solo en declaración anual"
+        )).font = Font(italic=True, size=9, color="888888")
+        ws.cell(row=row + 4, column=1, value=(
+            "* Medicinas de farmacia NO son deducibles (Art. 264 RLISR) - solo las de instituciones hospitalarias"
         )).font = Font(italic=True, size=9, color="888888")
 
         ws.freeze_panes = "A2"
@@ -489,7 +492,7 @@ class ExcelExporter:
 
         iva_rows = [
             ("IVA cobrado (trasladado en emitidas)", fi["iva_cobrado"], ""),
-            ("(-) IVA acreditable", fi["iva_acreditable"], "Solo de gastos clasificados como deducibles"),
+            ("(-) IVA acreditable", fi["iva_acreditable"], "Solo de gastos con deducción empresarial (Art. 103)"),
             ("(-) IVA retenido por clientes", fi["iva_retenido"], ""),
             None,  # separator
             ("IVA a pagar", fi["iva_a_pagar"], "IVA cobrado - IVA acreditable - IVA retenido"),
@@ -524,14 +527,16 @@ class ExcelExporter:
             ws.cell(row=row, column=col).fill = FISCAL_SECTION_FILL
         row += 1
 
+        ded_personales = fi.get("deducciones_personales_mes", 0)
         isr_rows = [
             ("Ingresos del mes", fi["ingresos_mes"], ""),
-            ("Deducciones reales del mes", fi["deducciones_mes"], "Solo gastos deducibles"),
-            ("Deducciones no deducibles del mes", fi["deducciones_no_deducibles"], "Consumo personal, efectivo >$2,000, etc."),
+            ("Deducciones empresariales del mes", fi["deducciones_mes"], "Solo gastos deducibles (Art. 103 LISR)"),
+            ("Deducciones personales del mes", ded_personales, "Art. 151 LISR - solo aplican en declaración anual"),
+            ("Deducciones no deducibles del mes", fi["deducciones_no_deducibles"], "Consumo personal, farmacia, efectivo >$2,000, etc."),
             None,
             ("Ingresos acumulados ene-" + MESES[month][:3].lower(), fi["ingresos_acum"], ""),
-            ("Deducciones acumuladas ene-" + MESES[month][:3].lower(), fi["deducciones_acum"], "Solo deducibles"),
-            ("Base gravable acumulada", fi["base_gravable"], "Ingresos acum. - Deducciones acum."),
+            ("Deducciones acumuladas ene-" + MESES[month][:3].lower(), fi["deducciones_acum"], "Solo empresariales (Art. 103)"),
+            ("Base gravable acumulada", fi["base_gravable"], "Ingresos acum. - Deducciones empresariales acum."),
             None,
             (isr_label(self.regimen), fi["isr_tarifa"], "Tarifa aplicada al periodo"),
             ("(-) ISR retenido acumulado", fi["isr_retenido_acum"], "Retenciones de clientes ene-" + MESES[month][:3].lower()),
@@ -646,9 +651,10 @@ class ExcelExporter:
 
         # Notas
         notas = [
-            "* IVA a Pagar = IVA cobrado - IVA acreditable (solo de gastos deducibles) - IVA retenido",
+            "* IVA a Pagar = IVA cobrado - IVA acreditable (solo de gastos con deducción empresarial) - IVA retenido",
             f"* ISR Prov. = {isr_label(self.regimen)}",
-            "* Ded. Reales = solo gastos clasificados como deducibles. No incluye depreciaciones ni pérdidas anteriores",
+            "* Ded. Empresariales = solo gastos Art. 103 LISR. Ded. Personales (Art. 151) solo aplican en declaración anual",
+            "* Medicinas de farmacia NO son deducibles (Art. 264 Reglamento LISR) - solo las de instituciones hospitalarias",
             "* Estimado educativo - no sustituye asesoría fiscal profesional",
         ]
         for nota in notas:
@@ -827,8 +833,17 @@ class ExcelExporter:
         # Nota al pie
         row += 1
         ws.cell(row=row, column=1, value=(
-            "Verde = 100% deducible | Amarillo = deducible con alertas | "
+            "Verde = 100% deducible empresarial | Amarillo = deducible con alertas (puede ser deducción personal) | "
             "Rosa = no deducible"
+        )).font = Font(italic=True, size=9, color="888888")
+        row += 1
+        ws.cell(row=row, column=1, value=(
+            "* Medicinas de farmacia NO son deducibles (Art. 264 RLISR). "
+            "Solo las incluidas en facturas de instituciones hospitalarias."
+        )).font = Font(italic=True, size=9, color="888888")
+        row += 1
+        ws.cell(row=row, column=1, value=(
+            "* Deducciones personales (Art. 151 LISR) solo aplican en declaración anual, no en pagos provisionales mensuales."
         )).font = Font(italic=True, size=9, color="888888")
         row += 1
         ws.cell(row=row, column=1, value=(

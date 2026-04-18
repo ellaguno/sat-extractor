@@ -170,9 +170,13 @@ def calcular_impuestos_mensuales(
             ))
 
         # ── Clasificar deducciones y calcular IVA acreditable ──
+        # IMPORTANTE: Solo deducciones empresariales (Art. 103 LISR) aplican
+        # en pagos provisionales mensuales. Las deducciones personales
+        # (Art. 151 LISR) solo aplican en la declaración anual (Art. 152).
         deducciones_mes = 0.0
         deducciones_brutas = 0.0
         deducciones_no_ded = 0.0
+        deducciones_personales_mes = 0.0
         iva_acreditable = 0.0
 
         for comp in gastos:
@@ -183,21 +187,34 @@ def calcular_impuestos_mensuales(
             signo = -1.0 if comp.tipo_comprobante == "E" else 1.0
 
             if comp.conceptos:
-                total_deducible = Decimal("0")
+                total_deducible_empresarial = Decimal("0")
+                total_deducible_personal = Decimal("0")
                 total_original = Decimal("0")
                 for concepto in comp.conceptos:
                     resultado = clasificador.clasificar_concepto(concepto, comp)
-                    total_deducible += resultado.monto_deducible
                     total_original += resultado.monto_original
+                    if resultado.tipo_deduccion == "personal":
+                        total_deducible_personal += resultado.monto_deducible
+                    elif resultado.tipo_deduccion == "empresarial":
+                        total_deducible_empresarial += resultado.monto_deducible
 
+                total_ded_all = total_deducible_empresarial + total_deducible_personal
                 pct_deducible = (
-                    float(total_deducible / total_original)
+                    float(total_ded_all / total_original)
                     if total_original > 0 else 0.0
                 )
-                deducciones_mes += float(total_deducible) * signo
+                # Solo empresariales reducen base gravable mensual
+                deducciones_mes += float(total_deducible_empresarial) * signo
+                deducciones_personales_mes += float(total_deducible_personal) * signo
                 deducciones_brutas += float(total_original) * signo
-                deducciones_no_ded += float(total_original - total_deducible) * signo
-                iva_acreditable += iva_comp * pct_deducible * signo
+                no_ded = float(total_original - total_ded_all)
+                deducciones_no_ded += no_ded * signo
+                # IVA acreditable: solo de gastos con deducción empresarial
+                pct_empresarial = (
+                    float(total_deducible_empresarial / total_original)
+                    if total_original > 0 else 0.0
+                )
+                iva_acreditable += iva_comp * pct_empresarial * signo
             else:
                 deducciones_brutas += subtotal_comp * signo
 
@@ -254,6 +271,7 @@ def calcular_impuestos_mensuales(
             "deducciones_acum": round(deducciones_acum, 2),
             "deducciones_brutas": round(deducciones_brutas, 2),
             "deducciones_no_deducibles": round(deducciones_no_ded, 2),
+            "deducciones_personales_mes": round(deducciones_personales_mes, 2),
             "base_gravable": round(base_gravable, 2),
             "isr_tarifa": round(isr_tarifa, 2),
             "isr_retenido_acum": isr_retenido_acum,
